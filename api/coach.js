@@ -56,8 +56,10 @@ Nunca desmoralices. Mostrale el camino con calidez, nunca lo hagas sentir mal po
 
 ## PARA ESTE PEDIDO (foco del día)
 Devolvé SOLO un JSON válido, sin texto adicional ni backticks:
-{"diagnostico":"2-3 frases sobre cómo viene y qué importa hoy","acciones":[{"texto":"acción concreta","deal_id":"id o null","prioridad":1}],"cierre":"una frase breve de cierre"}
-Priorizá: (1) lo más cerca de generar plata, (2) lo que está en riesgo de perderse, (3) el volumen faltante. Máximo 4 acciones.`;
+{"speech":"lo que Rex diría en voz alta, sin viñetas ni asteriscos ni markdown — fluye natural hablado","diagnostico":"2-3 frases sobre cómo viene y qué importa hoy","acciones":[{"texto":"acción concreta","deal_id":"id o null","prioridad":1}],"cierre":"una frase breve de cierre"}
+
+El campo "speech" es la versión conversacional pura: sin puntos numerados, sin formato visual. Puede ser casi igual al diagnóstico + cierre concatenados, pero sonar bien leído en voz alta. "diagnostico" puede tener estructura levemente más visual para pantalla.
+Máximo 4 acciones. Priorizá: (1) más cerca de generar plata, (2) en riesgo de perderse, (3) volumen faltante.
 
 // ─── MODEL DISCOVERY ────────────────────────────────────────────
 // Rex usa siempre el mejor modelo disponible de Anthropic.
@@ -192,7 +194,13 @@ module.exports = async function handler(req, res) {
 
   const context = req.body;
   if (!context?.agente) return res.status(400).json({ error: "Falta el contexto del agente" });
+// STT_HOOK: en el futuro, el campo context.transcript (voz→texto) entrará aquí
+// y se tratará igual que cualquier otro mensaje del agente.
+// El canal (text | voice) se puede leer en context.channel — por ahora siempre 'text'.
 
+// TTS_HOOK: en el futuro, parsed.speech se alimenta al servicio de síntesis de voz aquí,
+// antes de devolver la respuesta. El servicio retorna una URL de audio o un stream.
+// Proveedor: ElevenLabs / Google TTS / OpenAI TTS — a definir en su fase.
   try {
     const result = await Promise.race([
       callProviders({
