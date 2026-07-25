@@ -2,14 +2,14 @@
 // ZUNAI · Rex Coach API
 // IMPORTANTE: El modelo se selecciona AUTOMÁTICAMENTE.
 // Nunca hardcodear un nombre de modelo en este archivo.
-// Ver sección MODEL DISCOVERY para entender el mecanismo.
 // ═══════════════════════════════════════════════════════════════
 
 const Anthropic = require("@anthropic-ai/sdk");
 
 // ─── SYSTEM PROMPT ──────────────────────────────────────────────
 // Para actualizar la personalidad de Rex, solo editá esta sección.
-// No toques nada fuera de estas comillas.
+// El system prompt vive acá separado de la lógica de la función.
+// NOTA: no está atado a ningún canal (texto o voz) — Rex es Rex.
 const REX_SYSTEM_PROMPT = `Sos Rex, el coach de negocio de Zunai, la plataforma de gestión y coaching para agentes inmobiliarios en LatAm.
 
 No sos un asistente genérico ni un bot de tareas. Sos un coach, mentor y planificador con criterio real de negocio inmobiliario. Tu magia es ser PROACTIVO e integrado al trabajo del agente: aparecés en el momento justo, con lo pertinente, sin interrumpir de más.
@@ -54,17 +54,16 @@ Nunca desmoralices. Mostrale el camino con calidez, nunca lo hagas sentir mal po
 - Terminá con un próximo paso claro.
 - No inventes datos que no tenés.
 
-## PARA ESTE PEDIDO (foco del día)
+## FORMATO DE RESPUESTA
 Devolvé SOLO un JSON válido, sin texto adicional ni backticks:
-{"speech":"lo que Rex diría en voz alta, sin viñetas ni asteriscos ni markdown — fluye natural hablado","diagnostico":"2-3 frases sobre cómo viene y qué importa hoy","acciones":[{"texto":"acción concreta","deal_id":"id o null","prioridad":1}],"cierre":"una frase breve de cierre"}
+{"speech":"lo que Rex diría en voz alta — fluye natural hablado, sin viñetas ni asteriscos ni markdown","diagnostico":"2-3 frases sobre cómo viene y qué importa hoy","acciones":[{"texto":"acción concreta","deal_id":"id o null","prioridad":1}],"cierre":"una frase breve de cierre"}
 
-El campo "speech" es la versión conversacional pura: sin puntos numerados, sin formato visual. Puede ser casi igual al diagnóstico + cierre concatenados, pero sonar bien leído en voz alta. "diagnostico" puede tener estructura levemente más visual para pantalla.
-Máximo 4 acciones. Priorizá: (1) más cerca de generar plata, (2) en riesgo de perderse, (3) volumen faltante.
+El campo "speech" es la versión conversacional pura: sin puntos numerados, sin formato visual, suena bien leído en voz alta. "diagnostico" puede tener estructura levemente más visual para pantalla.
+Priorizá: (1) más cerca de generar plata, (2) en riesgo de perderse, (3) volumen faltante. Máximo 4 acciones.`;
 
 // ─── MODEL DISCOVERY ────────────────────────────────────────────
 // Rex usa siempre el mejor modelo disponible de Anthropic.
 // Se descubre automáticamente y se cachea 24hs en memoria.
-// Si sale una versión superior, la toma sola en el próximo ciclo.
 
 const MODEL_CACHE = { model: null, timestamp: 0 };
 const MODEL_CACHE_TTL = 24 * 60 * 60 * 1000;
@@ -100,7 +99,7 @@ async function getBestModel(client) {
 
 // ─── PROVIDER ABSTRACTION ───────────────────────────────────────
 // Rex está desacoplado del proveedor de IA.
-// Para agregar OpenAI u otro: implementar { name, complete() }
+// Para agregar otro proveedor: implementar { name, complete() }
 // y agregarlo a PROVIDERS en orden de prioridad.
 
 const anthropicProvider = {
@@ -118,8 +117,6 @@ const anthropicProvider = {
   },
 };
 
-// Registro de proveedores — agregar/reordenar sin tocar lógica de Rex
-// Estructura para scoring futuro: { provider, active, score }
 const PROVIDERS = [
   { provider: anthropicProvider, active: true, score: null },
   // { provider: openaiProvider, active: false, score: null },
@@ -135,7 +132,7 @@ async function callProviders(params) {
         return await provider.complete(params);
       } catch (err) {
         console.error(`[Rex] ${provider.name} intento ${attempt} falló: ${err.message}`);
-        if (err.status === 404) MODEL_CACHE.model = null; // forzar re-discovery si el modelo no existe
+        if (err.status === 404) MODEL_CACHE.model = null;
         if (attempt < RETRY_ATTEMPTS) await new Promise(r => setTimeout(r, 500 * attempt));
       }
     }
@@ -171,7 +168,12 @@ function buildFallbackResponse({ deals = [], metas = {} }) {
     });
   }
 
+  const speech = acciones.length > 0
+    ? `No pude conectarme en este momento, pero armé tu foco. ${acciones.map(a => a.texto).join(". ")}.`
+    : "No pude conectarme en este momento. Revisá tus deals activos y agendá al menos 3 contactos para hoy.";
+
   return {
+    speech,
     diagnostico: "No pude conectarme en este momento, pero armé tu foco con lo que sé de tu cartera.",
     acciones: acciones.length > 0 ? acciones : [
       { texto: "Revisá tus deals activos y agendá al menos 3 contactos para hoy", deal_id: null, prioridad: 1 },
@@ -194,13 +196,10 @@ module.exports = async function handler(req, res) {
 
   const context = req.body;
   if (!context?.agente) return res.status(400).json({ error: "Falta el contexto del agente" });
-// STT_HOOK: en el futuro, el campo context.transcript (voz→texto) entrará aquí
-// y se tratará igual que cualquier otro mensaje del agente.
-// El canal (text | voice) se puede leer en context.channel — por ahora siempre 'text'.
 
-// TTS_HOOK: en el futuro, parsed.speech se alimenta al servicio de síntesis de voz aquí,
-// antes de devolver la respuesta. El servicio retorna una URL de audio o un stream.
-// Proveedor: ElevenLabs / Google TTS / OpenAI TTS — a definir en su fase.
+  // STT_HOOK: context.transcript (voz→texto) entrará aquí en el futuro.
+  // El canal (text | voice) se puede leer en context.channel — por ahora siempre 'text'.
+
   try {
     const result = await Promise.race([
       callProviders({
@@ -211,11 +210,14 @@ module.exports = async function handler(req, res) {
       new Promise((_, reject) => setTimeout(() => reject(new Error("TIMEOUT")), TIMEOUT_MS)),
     ]);
 
+    // TTS_HOOK: parsed.speech se alimenta al servicio de síntesis de voz aquí antes de responder.
+    // Ejemplo futuro: const audioUrl = await ttsService.synthesize(parsed.speech)
+    // Proveedor a definir: ElevenLabs / Google TTS / OpenAI TTS.
     let parsed;
     try {
       parsed = JSON.parse(result.text);
     } catch {
-      parsed = { diagnostico: result.text, acciones: [], cierre: "" };
+      parsed = { speech: result.text, diagnostico: result.text, acciones: [], cierre: "" };
     }
 
     return res.status(200).json({
