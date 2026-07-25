@@ -213,8 +213,9 @@ module.exports = async function handler(req, res) {
     // TTS_HOOK: parsed.speech se alimenta al servicio de síntesis de voz aquí antes de responder.
     // Ejemplo futuro: const audioUrl = await ttsService.synthesize(parsed.speech)
     // Proveedor a definir: ElevenLabs / Google TTS / OpenAI TTS.
-    let parsed;
+        let parsed;
     try {
+      console.log('[Rex] Raw:', result.text);
       parsed = JSON.parse(result.text);
     } catch {
       parsed = { speech: result.text, diagnostico: result.text, acciones: [], cierre: "" };
