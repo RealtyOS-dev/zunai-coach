@@ -1,61 +1,52 @@
-// ══// ═══════════════════════════════════════════════════════════════
-// ZUNAI · Rex Coach API
-// IMPORTANTE: El modelo se selecciona AUTOMÁTICAMENTE.
-// ═══════════════════════════════════════════════════════════════
-
 const Anthropic = require("@anthropic-ai/sdk");
 
 const REX_SYSTEM_PROMPT = `Sos Rex, el coach de negocio de Zunai, la plataforma de gestión y coaching para agentes inmobiliarios en LatAm.
 
-No sos un asistente genérico ni un bot de tareas. Sos un coach, mentor y planificador con criterio real de negocio inmobiliario. Tu magia es ser PROACTIVO e integrado al trabajo del agente: aparecés en el momento justo, con lo pertinente, sin interrumpir de más.
+No sos un asistente genérico ni un bot de tareas. Sos un coach, mentor y planificador con criterio real de negocio inmobiliario.
 
 ## CÓMO TRABAJÁS
 
-**Ingeniería inversa de metas:** de la meta grande a las acciones concretas de hoy, con números. (Meta de ingresos → operaciones necesarias → pre-listings → conexiones y contactos por semana → acciones del día.)
+**Ingeniería inversa de metas:** de la meta grande a las acciones concretas de hoy, con números.
 
 **Ratios de referencia del negocio:**
 - Cada 6 pre-listings/pre-buyings → 1 cierre.
 - 30-50% de los pre-listings se captan. Con seguimiento se recupera ~20% de los no captados.
 - Semana sustentable: 15 conexiones cara a cara, 2 contactos nuevos a la red, 3 pre-listings.
-- Cartera: <10 negocio en desarrollo / 11-19 en crecimiento / 20+ próspero. Pasadas ~35 propiedades, sugerir armar equipo.
-- Rotación de cartera (vendidas/cartera) ≥10%. Tasa de servicio ≥15%.
-- "Conexión cara a cara" = cualquier contacto presencial donde se hable del rubro.
+- Cartera: menos de 10 es negocio en desarrollo, 11-19 en crecimiento, 20 o más próspero.
+- Rotación de cartera mayor o igual a 10%. Tasa de servicio mayor o igual a 15%.
+- Conexión cara a cara es cualquier contacto presencial donde se hable del rubro.
 
-**Ticket promedio:** en Argentina se habla del ticket por VALOR de propiedad (ej. USD 180.000), no por comisión.
+**Ticket promedio:** en Argentina se habla del ticket por VALOR de propiedad, no por comisión.
 
 ## LAS 3 CLAVES QUE SOSTENÉS SIEMPRE
-1. RESILIENCIA — cada no acerca al sí.
-2. VOLUMEN — es lo ÚNICO 100% en control del agente.
-3. VELOCIDAD — "venta diferida, venta perdida".
+1. RESILIENCIA: cada no acerca al sí.
+2. VOLUMEN: es lo único 100% en control del agente.
+3. VELOCIDAD: venta diferida, venta perdida.
 
 ## FILOSOFÍA
-- Venta CONSULTIVA y RELACIONAL. Las ventas son emocionales. El SEGUIMIENTO es todo.
-- Prospección = 50%+ del tiempo.
-- Vender es AYUDAR.
-- Escuchar 80 / hablar 20.
-- Cada acción deja su PRÓXIMO PASO agendado. Nada suelto.
-- Todo lead que entra es captación o venta.
-
-## TE ADAPTÁS A LA PERSONA
-Todo lo que decís es SUGERENCIA. El objetivo no es maximizar números: es que tenga el negocio Y la vida que quiere.
-
-## LENGUAJE
-Nunca desmoralices. Mostrale el camino con calidez, nunca lo hagas sentir mal por dónde está.
+- Venta consultiva y relacional. Las ventas son emocionales. El seguimiento es todo.
+- Prospección es el 50% o más del tiempo.
+- Vender es ayudar.
+- Escuchar 80, hablar 20.
+- Cada acción deja su próximo paso agendado. Nada suelto.
 
 ## ESTILO
 - Español rioplatense, voseo.
-- Cálido pero DIRECTO y CONCRETO. Nada de motivación vacía.
-- BREVE: 2-4 frases o una lista corta. El agente está trabajando.
-- Terminá con un próximo paso claro.
+- Cálido pero directo y concreto. Nada de motivación vacía.
+- Breve: 2-4 frases o una lista corta.
 - No inventes datos que no tenés.
 
-## FORMATO DE RESPUESTA
-IMPORTANTE: Devolvé SIEMPRE un JSON con los 4 campos, aunque los datos sean mínimos o no haya deals activos. Si no hay deals, aconsejá acciones para construir la cartera.
+## FORMATO DE RESPUESTA — CRÍTICO
+Tu respuesta debe comenzar EXACTAMENTE con el carácter { y terminar EXACTAMENTE con el carácter }
+NO agregues ningún texto antes ni después del JSON.
+NO hagas auto-correcciones ni escribas frases como "Perdón, corrijo el formato".
+NO uses backticks ni markdown.
+SOLO el JSON, nada más.
 
-Devolvé SOLO el JSON, sin texto extra, sin backticks, sin markdown:
-{"speech":"lo que Rex diría en voz alta, fluye natural hablado sin viñetas ni asteriscos","diagnostico":"2-3 frases concretas sobre el momento del negocio y qué importa hoy","acciones":[{"texto":"acción concreta y específica","deal_id":"id o null","prioridad":1}],"cierre":"una frase de cierre directa y motivadora"}
+Formato exacto:
+{"speech":"texto conversacional para voz sin viñetas ni asteriscos","diagnostico":"2-3 frases sobre el momento del negocio","acciones":[{"texto":"accion concreta","deal_id":"id o null","prioridad":1}],"cierre":"frase de cierre breve"}
 
-Mínimo 1 acción siempre. Máximo 4.`;
+Mínimo 1 acción. Máximo 4. Si no hay deals, aconsejá cómo construir la cartera.`;
 
 // ─── MODEL DISCOVERY ────────────────────────────────────────────
 const MODEL_CACHE = { model: null, timestamp: 0 };
@@ -85,7 +76,7 @@ async function getBestModel(client) {
     console.log(`[Rex] Modelo seleccionado: ${MODEL_CACHE.model}`);
     return MODEL_CACHE.model;
   } catch (err) {
-    console.error(`[Rex] Model discovery falló: ${err.message}`);
+    console.error(`[Rex] Model discovery fallo: ${err.message}`);
     return MODEL_FALLBACK;
   }
 }
@@ -103,16 +94,12 @@ const anthropicProvider = {
       messages: [{ role: "user", content: userMessage }],
     });
     const textBlock = msg.content.find(b => b.type === "text");
-const text = textBlock ? textBlock.text : JSON.stringify(msg.content);
-console.log("[Rex] Content blocks:", JSON.stringify(msg.content).substring(0, 300));
-return { text, model, provider: "anthropic" };
+    const text = textBlock ? textBlock.text : JSON.stringify(msg.content);
+    return { text, model, provider: "anthropic" };
   },
 };
 
-const PROVIDERS = [
-  { provider: anthropicProvider, active: true },
-];
-
+const PROVIDERS = [{ provider: anthropicProvider, active: true }];
 const RETRY_ATTEMPTS = 2;
 
 async function callProviders(params) {
@@ -122,7 +109,7 @@ async function callProviders(params) {
       try {
         return await provider.complete(params);
       } catch (err) {
-        console.error(`[Rex] ${provider.name} intento ${attempt} falló: ${err.message}`);
+        console.error(`[Rex] ${provider.name} intento ${attempt} fallo: ${err.message}`);
         if (err.status === 404) MODEL_CACHE.model = null;
         if (attempt < RETRY_ATTEMPTS) await new Promise(r => setTimeout(r, 500 * attempt));
       }
@@ -141,7 +128,7 @@ function buildFallbackResponse({ deals = [], metas = {} }) {
 
   coldDeals.forEach((deal, i) => {
     acciones.push({
-      texto: `Retomar contacto con ${deal.cliente} — ${deal.direccion} lleva ${deal.dias_sin_contacto} días sin movimiento`,
+      texto: `Retomar contacto con ${deal.cliente} — lleva ${deal.dias_sin_contacto} dias sin movimiento`,
       deal_id: deal.id || null,
       prioridad: i + 1,
     });
@@ -157,15 +144,17 @@ function buildFallbackResponse({ deals = [], metas = {} }) {
   }
 
   return {
-    speech: "No pude conectarme en este momento, pero armé tu foco con lo que sé de tu cartera.",
-    diagnostico: "No pude conectarme en este momento, pero armé tu foco con lo que sé de tu cartera.",
+    speech: "No pude conectarme en este momento, pero arme tu foco con lo que se de tu cartera.",
+    diagnostico: "No pude conectarme en este momento, pero arme tu foco con lo que se de tu cartera.",
     acciones: acciones.length > 0 ? acciones : [
-      { texto: "Revisá tus deals activos y agendá al menos 3 contactos para hoy", deal_id: null, prioridad: 1 },
+      { texto: "Revisa tus deals activos y agenda al menos 3 contactos para hoy", deal_id: null, prioridad: 1 },
     ],
-    cierre: "Cada acción suma. Vamos.",
+    cierre: "Cada accion suma. Vamos.",
     _fallback: true,
   };
 }
+
+// ─── JSON EXTRACTOR ──────────────────────────────────────────────
 function extractJSON(text) {
   if (!text) return null;
   try { return JSON.parse(text.trim()); } catch {}
@@ -191,6 +180,7 @@ function extractJSON(text) {
   }
   return null;
 }
+
 // ─── HANDLER PRINCIPAL ──────────────────────────────────────────
 const TIMEOUT_MS = 20000;
 
@@ -204,34 +194,33 @@ module.exports = async function handler(req, res) {
   const context = req.body;
   if (!context?.agente) return res.status(400).json({ error: "Falta el contexto del agente" });
 
-  // STT_HOOK: context.transcript (voz→texto) entrará aquí en el futuro.
-  // El canal (text | voice) se puede leer en context.channel — por ahora siempre 'text'.
+  // STT_HOOK: context.transcript (voz a texto) entrara aqui en el futuro.
 
   try {
     const result = await Promise.race([
       callProviders({
         systemPrompt: REX_SYSTEM_PROMPT,
         userMessage: JSON.stringify(context),
-        maxTokens: 800,
+        maxTokens: 1024,
       }),
       new Promise((_, reject) => setTimeout(() => reject(new Error("TIMEOUT")), TIMEOUT_MS)),
     ]);
 
-    console.log("[Rex] Raw:", result.text);
+    console.log("[Rex] Raw:", result.text ? result.text.substring(0, 200) : "undefined");
 
-    // TTS_HOOK: parsed.speech se alimenta al servicio de síntesis de voz aquí antes de responder.
+    // TTS_HOOK: result.speech se alimenta al servicio de sintesis de voz aqui.
     // Ejemplo futuro: const audioUrl = await ttsService.synthesize(parsed.speech)
-    // Proveedor a definir: ElevenLabs / Google TTS / OpenAI TTS.
+
     let parsed = extractJSON(result.text);
-if (!parsed) {
-  parsed = { speech: result.text, diagnostico: result.text, acciones: [], cierre: "" };
-}
+    if (!parsed) {
+      parsed = { speech: result.text, diagnostico: result.text, acciones: [], cierre: "" };
+    }
 
     if (!parsed.diagnostico && parsed.speech) parsed.diagnostico = parsed.speech;
-    if (!parsed.diagnostico) parsed.diagnostico = "Contame qué estás trabajando para ayudarte mejor.";
-    if (!parsed.cierre) parsed.cierre = "Cada acción suma. Vamos.";
+    if (!parsed.diagnostico) parsed.diagnostico = "Contame que estas trabajando para ayudarte mejor.";
+    if (!parsed.cierre) parsed.cierre = "Cada accion suma. Vamos.";
     if (!parsed.acciones || !parsed.acciones.length) {
-      parsed.acciones = [{ texto: "Revisá tus deals activos y agendá 3 contactos para hoy", deal_id: null, prioridad: 1 }];
+      parsed.acciones = [{ texto: "Revisa tus deals activos y agenda 3 contactos para hoy", deal_id: null, prioridad: 1 }];
     }
 
     return res.status(200).json({
