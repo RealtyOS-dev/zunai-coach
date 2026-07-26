@@ -102,7 +102,10 @@ const anthropicProvider = {
       system: systemPrompt,
       messages: [{ role: "user", content: userMessage }],
     });
-    return { text: msg.content[0].text, model, provider: "anthropic" };
+    const textBlock = msg.content.find(b => b.type === "text");
+const text = textBlock ? textBlock.text : JSON.stringify(msg.content);
+console.log("[Rex] Content blocks:", JSON.stringify(msg.content).substring(0, 300));
+return { text, model, provider: "anthropic" };
   },
 };
 
