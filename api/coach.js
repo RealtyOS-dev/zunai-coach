@@ -166,7 +166,23 @@ function buildFallbackResponse({ deals = [], metas = {} }) {
     _fallback: true,
   };
 }
-
+function extractJSON(text) {
+  if (!text) return null;
+  const start = text.indexOf('{');
+  if (start === -1) return null;
+  let depth = 0;
+  for (let i = start; i < text.length; i++) {
+    if (text[i] === '{') depth++;
+    else if (text[i] === '}') {
+      depth--;
+      if (depth === 0) {
+        try { return JSON.parse(text.substring(start, i + 1)); }
+        catch { return null; }
+      }
+    }
+  }
+  return null;
+}
 // ─── HANDLER PRINCIPAL ──────────────────────────────────────────
 const TIMEOUT_MS = 20000;
 
@@ -198,12 +214,10 @@ module.exports = async function handler(req, res) {
     // TTS_HOOK: parsed.speech se alimenta al servicio de síntesis de voz aquí antes de responder.
     // Ejemplo futuro: const audioUrl = await ttsService.synthesize(parsed.speech)
     // Proveedor a definir: ElevenLabs / Google TTS / OpenAI TTS.
-    let parsed;
-    try {
-      parsed = JSON.parse(result.text);
-    } catch {
-      parsed = { speech: result.text, diagnostico: result.text, acciones: [], cierre: "" };
-    }
+    let parsed = extractJSON(result.text);
+if (!parsed) {
+  parsed = { speech: result.text, diagnostico: result.text, acciones: [], cierre: "" };
+}
 
     if (!parsed.diagnostico && parsed.speech) parsed.diagnostico = parsed.speech;
     if (!parsed.diagnostico) parsed.diagnostico = "Contame qué estás trabajando para ayudarte mejor.";
