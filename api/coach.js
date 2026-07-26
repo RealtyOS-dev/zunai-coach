@@ -1,15 +1,10 @@
-// ═══════════════════════════════════════════════════════════════
+// ══// ═══════════════════════════════════════════════════════════════
 // ZUNAI · Rex Coach API
 // IMPORTANTE: El modelo se selecciona AUTOMÁTICAMENTE.
-// Nunca hardcodear un nombre de modelo en este archivo.
 // ═══════════════════════════════════════════════════════════════
 
 const Anthropic = require("@anthropic-ai/sdk");
 
-// ─── SYSTEM PROMPT ──────────────────────────────────────────────
-// Para actualizar la personalidad de Rex, solo editá esta sección.
-// El system prompt vive acá separado de la lógica de la función.
-// NOTA: no está atado a ningún canal (texto o voz) — Rex es Rex.
 const REX_SYSTEM_PROMPT = `Sos Rex, el coach de negocio de Zunai, la plataforma de gestión y coaching para agentes inmobiliarios en LatAm.
 
 No sos un asistente genérico ni un bot de tareas. Sos un coach, mentor y planificador con criterio real de negocio inmobiliario. Tu magia es ser PROACTIVO e integrado al trabajo del agente: aparecés en el momento justo, con lo pertinente, sin interrumpir de más.
@@ -55,16 +50,14 @@ Nunca desmoralices. Mostrale el camino con calidez, nunca lo hagas sentir mal po
 - No inventes datos que no tenés.
 
 ## FORMATO DE RESPUESTA
-Devolvé SOLO un JSON válido, sin texto adicional ni backticks:
-{"speech":"lo que Rex diría en voz alta — fluye natural hablado, sin viñetas ni asteriscos ni markdown","diagnostico":"2-3 frases sobre cómo viene y qué importa hoy","acciones":[{"texto":"acción concreta","deal_id":"id o null","prioridad":1}],"cierre":"una frase breve de cierre"}
+IMPORTANTE: Devolvé SIEMPRE un JSON con los 4 campos, aunque los datos sean mínimos o no haya deals activos. Si no hay deals, aconsejá acciones para construir la cartera.
 
-El campo "speech" es la versión conversacional pura: sin puntos numerados, sin formato visual, suena bien leído en voz alta. "diagnostico" puede tener estructura levemente más visual para pantalla.
-Priorizá: (1) más cerca de generar plata, (2) en riesgo de perderse, (3) volumen faltante. Máximo 4 acciones.`;
+Devolvé SOLO el JSON, sin texto extra, sin backticks, sin markdown:
+{"speech":"lo que Rex diría en voz alta, fluye natural hablado sin viñetas ni asteriscos","diagnostico":"2-3 frases concretas sobre el momento del negocio y qué importa hoy","acciones":[{"texto":"acción concreta y específica","deal_id":"id o null","prioridad":1}],"cierre":"una frase de cierre directa y motivadora"}
+
+Mínimo 1 acción siempre. Máximo 4.`;
 
 // ─── MODEL DISCOVERY ────────────────────────────────────────────
-// Rex usa siempre el mejor modelo disponible de Anthropic.
-// Se descubre automáticamente y se cachea 24hs en memoria.
-
 const MODEL_CACHE = { model: null, timestamp: 0 };
 const MODEL_CACHE_TTL = 24 * 60 * 60 * 1000;
 const MODEL_FAMILY_RANK = { opus: 3, sonnet: 2, haiku: 1 };
@@ -92,16 +85,12 @@ async function getBestModel(client) {
     console.log(`[Rex] Modelo seleccionado: ${MODEL_CACHE.model}`);
     return MODEL_CACHE.model;
   } catch (err) {
-    console.error(`[Rex] Model discovery falló, usando fallback: ${err.message}`);
+    console.error(`[Rex] Model discovery falló: ${err.message}`);
     return MODEL_FALLBACK;
   }
 }
 
 // ─── PROVIDER ABSTRACTION ───────────────────────────────────────
-// Rex está desacoplado del proveedor de IA.
-// Para agregar otro proveedor: implementar { name, complete() }
-// y agregarlo a PROVIDERS en orden de prioridad.
-
 const anthropicProvider = {
   name: "anthropic",
   async complete({ systemPrompt, userMessage, maxTokens }) {
@@ -118,8 +107,7 @@ const anthropicProvider = {
 };
 
 const PROVIDERS = [
-  { provider: anthropicProvider, active: true, score: null },
-  // { provider: openaiProvider, active: false, score: null },
+  { provider: anthropicProvider, active: true },
 ];
 
 const RETRY_ATTEMPTS = 2;
@@ -141,9 +129,6 @@ async function callProviders(params) {
 }
 
 // ─── FALLBACK LOCAL ──────────────────────────────────────────────
-// Si todos los proveedores fallan, Rex responde con reglas locales.
-// El agente nunca se queda sin foco del día.
-
 function buildFallbackResponse({ deals = [], metas = {} }) {
   const acciones = [];
   const coldDeals = [...deals]
@@ -168,12 +153,8 @@ function buildFallbackResponse({ deals = [], metas = {} }) {
     });
   }
 
-  const speech = acciones.length > 0
-    ? `No pude conectarme en este momento, pero armé tu foco. ${acciones.map(a => a.texto).join(". ")}.`
-    : "No pude conectarme en este momento. Revisá tus deals activos y agendá al menos 3 contactos para hoy.";
-
   return {
-    speech,
+    speech: "No pude conectarme en este momento, pero armé tu foco con lo que sé de tu cartera.",
     diagnostico: "No pude conectarme en este momento, pero armé tu foco con lo que sé de tu cartera.",
     acciones: acciones.length > 0 ? acciones : [
       { texto: "Revisá tus deals activos y agendá al menos 3 contactos para hoy", deal_id: null, prioridad: 1 },
@@ -184,7 +165,6 @@ function buildFallbackResponse({ deals = [], metas = {} }) {
 }
 
 // ─── HANDLER PRINCIPAL ──────────────────────────────────────────
-
 const TIMEOUT_MS = 20000;
 
 module.exports = async function handler(req, res) {
@@ -210,15 +190,23 @@ module.exports = async function handler(req, res) {
       new Promise((_, reject) => setTimeout(() => reject(new Error("TIMEOUT")), TIMEOUT_MS)),
     ]);
 
+    console.log("[Rex] Raw:", result.text);
+
     // TTS_HOOK: parsed.speech se alimenta al servicio de síntesis de voz aquí antes de responder.
     // Ejemplo futuro: const audioUrl = await ttsService.synthesize(parsed.speech)
     // Proveedor a definir: ElevenLabs / Google TTS / OpenAI TTS.
-        let parsed;
+    let parsed;
     try {
-      console.log('[Rex] Raw:', result.text);
       parsed = JSON.parse(result.text);
     } catch {
       parsed = { speech: result.text, diagnostico: result.text, acciones: [], cierre: "" };
+    }
+
+    if (!parsed.diagnostico && parsed.speech) parsed.diagnostico = parsed.speech;
+    if (!parsed.diagnostico) parsed.diagnostico = "Contame qué estás trabajando para ayudarte mejor.";
+    if (!parsed.cierre) parsed.cierre = "Cada acción suma. Vamos.";
+    if (!parsed.acciones || !parsed.acciones.length) {
+      parsed.acciones = [{ texto: "Revisá tus deals activos y agendá 3 contactos para hoy", deal_id: null, prioridad: 1 }];
     }
 
     return res.status(200).json({
