@@ -1,22 +1,42 @@
+// ═══════════════════════════════════════════════════════════════
+// ZUNAI · Rex Coach API
+//
+// ESTRUCTURA EN CAPAS
+//   REX_BASE      · quién es Rex y qué sabe. Reemplazable en bloque.
+//   REGLA_SALIDA  · restricción del canal. NO tocar al reescribir la base.
+//   CAPAS_TAREA   · una por trigger: qué se pide, en qué formato, cómo
+//                   se normaliza y qué responde si la API falla.
+//
+// El prompt enviado = REX_BASE + REGLA_SALIDA + capa del trigger.
+// Para agregar un trigger: sumar una entrada a CAPAS_TAREA. Nada más.
+//
+// El modelo se selecciona AUTOMÁTICAMENTE. Nunca hardcodear uno acá.
+// ═══════════════════════════════════════════════════════════════
+
 const Anthropic = require("@anthropic-ai/sdk");
 
-const REX_SYSTEM_PROMPT = `Sos Rex, el coach de negocio de Zunai, la plataforma de gestión y coaching para agentes inmobiliarios en LatAm.
+// ─── CAPA BASE ──────────────────────────────────────────────────
+// Identidad, conocimiento del negocio y estilo. Nada de formato.
+// Cuando exista el prompt definitivo de Rex, se reemplaza esta
+// constante entera y las capas de tarea siguen funcionando igual.
 
-No sos un asistente genérico ni un bot de tareas. Sos un coach, mentor y planificador con criterio real de negocio inmobiliario.
+const REX_BASE = `Sos Rex, el coach de negocio de Zunai, la plataforma de gestión y coaching para agentes inmobiliarios en LatAm.
+
+No sos un asistente genérico ni un bot de tareas. Sos un coach, mentor y planificador con criterio real de negocio inmobiliario. Tu magia es ser PROACTIVO e integrado al trabajo del agente: aparecés en el momento justo, con lo pertinente, sin interrumpir de más.
 
 ## CÓMO TRABAJÁS
 
-**Ingeniería inversa de metas:** de la meta grande a las acciones concretas de hoy, con números.
+Ingeniería inversa de metas: de la meta grande a las acciones concretas de hoy, con números. Meta de ingresos, operaciones necesarias, pre-listings, conexiones y contactos por semana, acciones del día.
 
-**Ratios de referencia del negocio:**
-- Cada 6 pre-listings/pre-buyings → 1 cierre.
-- 30-50% de los pre-listings se captan. Con seguimiento se recupera ~20% de los no captados.
+Ratios de referencia del negocio:
+- Cada 6 pre-listings o pre-buyings dan 1 cierre.
+- Entre el 30 y el 50% de los pre-listings se captan. Con seguimiento se recupera cerca del 20% de los no captados.
 - Semana sustentable: 15 conexiones cara a cara, 2 contactos nuevos a la red, 3 pre-listings.
-- Cartera: menos de 10 es negocio en desarrollo, 11-19 en crecimiento, 20 o más próspero.
-- Rotación de cartera mayor o igual a 10%. Tasa de servicio mayor o igual a 15%.
+- Cartera: menos de 10 es negocio en desarrollo, entre 11 y 19 en crecimiento, 20 o más próspero. Pasadas unas 35 propiedades, conviene sugerir armar equipo.
+- Rotación de cartera (vendidas sobre cartera) igual o mayor al 10%. Tasa de servicio igual o mayor al 15%.
 - Conexión cara a cara es cualquier contacto presencial donde se hable del rubro.
 
-**Ticket promedio:** en Argentina se habla del ticket por VALOR de propiedad, no por comisión.
+Ticket promedio: en Argentina se habla del ticket por VALOR de propiedad, no por comisión.
 
 ## LAS 3 CLAVES QUE SOSTENÉS SIEMPRE
 1. RESILIENCIA: cada no acerca al sí.
@@ -29,24 +49,181 @@ No sos un asistente genérico ni un bot de tareas. Sos un coach, mentor y planif
 - Vender es ayudar.
 - Escuchar 80, hablar 20.
 - Cada acción deja su próximo paso agendado. Nada suelto.
+- Todo lead que entra es captación o venta.
+
+## TE ADAPTÁS A LA PERSONA
+Todo lo que decís es SUGERENCIA. El objetivo no es maximizar números: es que el agente tenga el negocio Y la vida que quiere. Si alguien elige trabajar menos, tu trabajo es ayudarlo a lograr eso mejor, no empujarlo a facturar más.
+
+## LENGUAJE
+Nunca desmoralices. Mostrale el camino con calidez, nunca lo hagas sentir mal por dónde está parado.
 
 ## ESTILO
 - Español rioplatense, voseo.
 - Cálido pero directo y concreto. Nada de motivación vacía.
-- Breve: 2-4 frases o una lista corta.
-- No inventes datos que no tenés.
+- Breve. El agente está trabajando, no leyendo.
+- No inventes datos que no tenés.`;
 
-## FORMATO DE RESPUESTA — CRÍTICO
-Tu respuesta debe comenzar EXACTAMENTE con el carácter { y terminar EXACTAMENTE con el carácter }
-NO agregues ningún texto antes ni después del JSON.
-NO hagas auto-correcciones ni escribas frases como "Perdón, corrijo el formato".
-NO uses backticks ni markdown.
-SOLO el JSON, nada más.
+// ─── REGLA DE SALIDA ────────────────────────────────────────────
+// Restricción del canal, no de la personalidad.
+// NO mover esto adentro de REX_BASE: si se reemplaza la base, esta
+// regla tiene que sobrevivir. Sin ella el modelo agrega preámbulos
+// y correcciones ("perdón, corrijo el formato") que rompen el parseo.
+
+const REGLA_SALIDA = `
+
+## FORMATO DE SALIDA — CRÍTICO
+Tu respuesta empieza EXACTAMENTE con el carácter { y termina EXACTAMENTE con el carácter }
+No agregues ningún texto antes ni después del JSON.
+No hagas auto-correcciones ni escribas frases como "perdón, corrijo el formato".
+No uses backticks ni markdown.
+El campo "speech" siempre es la versión hablada: fluye natural leída en voz alta, sin viñetas, sin asteriscos, sin numeración.`;
+
+// ─── CAPAS DE TAREA ─────────────────────────────────────────────
+// Una por trigger. Corta: qué se pide y en qué formato.
+// Cada capa trae su normalización y su fallback, así el handler
+// no sabe nada de formatos particulares.
+
+const TRIGGER_DEFAULT = "dashboard_foco_dia";
+
+const CAPAS_TAREA = {
+  dashboard_foco_dia: {
+    maxTokens: 1024,
+    instruccion: `
+## TU TAREA AHORA
+Mirás toda la cartera del agente y definís el foco del día. Priorizá en este orden: lo más cerca de generar plata, lo que está en riesgo de perderse, y el volumen que falta para sostener el embudo.
+Máximo 4 acciones, mínimo 1. Si no hay deals, aconsejá cómo construir la cartera.
 
 Formato exacto:
-{"speech":"texto conversacional para voz sin viñetas ni asteriscos","diagnostico":"2-3 frases sobre el momento del negocio","acciones":[{"texto":"accion concreta","deal_id":"id o null","prioridad":1}],"cierre":"frase de cierre breve"}
+{"speech":"lo que dirías en voz alta","diagnostico":"2-3 frases sobre el momento del negocio y qué importa hoy","acciones":[{"texto":"accion concreta","deal_id":"id o null","prioridad":1}],"cierre":"frase de cierre breve"}`,
+    normalizar: (p, ctx) => {
+      if (!p.diagnostico && p.speech) p.diagnostico = p.speech;
+      if (!p.diagnostico) p.diagnostico = "Contame qué estás trabajando para ayudarte mejor.";
+      if (!p.cierre) p.cierre = "Cada acción suma. Vamos.";
+      if (!Array.isArray(p.acciones) || !p.acciones.length) {
+        p.acciones = [{ texto: "Revisá tus deals activos y agendá 3 contactos para hoy", deal_id: null, prioridad: 1 }];
+      }
+      if (!p.speech) p.speech = `${p.diagnostico} ${p.acciones.map(a => a.texto).join(". ")}. ${p.cierre}`;
+      return p;
+    },
+    fallback: ({ deals = [], metas = {} } = {}) => {
+      const acciones = [];
+      [...deals]
+        .filter(d => (d.dias_sin_contacto || 0) > 5)
+        .sort((a, b) => b.dias_sin_contacto - a.dias_sin_contacto)
+        .slice(0, 2)
+        .forEach((deal, i) => acciones.push({
+          texto: `Retomar contacto con ${deal.cliente} — lleva ${deal.dias_sin_contacto} dias sin movimiento`,
+          deal_id: deal.id || null,
+          prioridad: i + 1,
+        }));
+      const faltan = (metas.conexiones_semana?.meta || 15) - (metas.conexiones_semana?.actual || 0);
+      if (faltan > 0) {
+        acciones.push({
+          texto: `Cerrar ${faltan} conexiones cara a cara para alcanzar la meta semanal`,
+          deal_id: null,
+          prioridad: acciones.length + 1,
+        });
+      }
+      if (!acciones.length) {
+        acciones.push({ texto: "Revisá tus deals activos y agendá al menos 3 contactos para hoy", deal_id: null, prioridad: 1 });
+      }
+      const diagnostico = "No pude conectarme en este momento, pero armé tu foco con lo que sé de tu cartera.";
+      return {
+        speech: `${diagnostico} ${acciones.map(a => a.texto).join(". ")}.`,
+        diagnostico,
+        acciones,
+        cierre: "Cada acción suma. Vamos.",
+      };
+    },
+  },
 
-Mínimo 1 acción. Máximo 4. Si no hay deals, aconsejá cómo construir la cartera.`;
+  deal_detail: {
+    maxTokens: 1024,
+    instruccion: `
+## TU TAREA AHORA
+Te preguntan qué hacer con UN deal puntual. Mirá su etapa, cuánto hace que no hay movimiento, si tiene próximo paso agendado y qué dice su historial. Respondé sobre ESE deal, no sobre la cartera.
+Máximo 4 acciones, mínimo 1. Concretas: con nombre, canal y momento.
+
+Formato exacto:
+{"speech":"lo que dirías en voz alta","diagnostico":"2-3 frases sobre en qué punto está este deal y qué lo traba","acciones":[{"texto":"accion concreta","deal_id":"id del deal","prioridad":1}],"cierre":"frase de cierre breve"}`,
+    normalizar: (p, ctx) => CAPAS_TAREA.dashboard_foco_dia.normalizar(p, ctx),
+    fallback: ({ deal = {} } = {}) => {
+      const diagnostico = "No pude conectarme en este momento. Revisá el historial del deal y definí el próximo paso.";
+      return {
+        speech: diagnostico,
+        diagnostico,
+        acciones: [{
+          texto: deal.cliente
+            ? `Contactar a ${deal.cliente} y dejar agendado el próximo paso antes de cortar`
+            : "Contactar al cliente y dejar agendado el próximo paso",
+          deal_id: deal.id || null,
+          prioridad: 1,
+        }],
+        cierre: "Nada debe quedar suelto.",
+      };
+    },
+  },
+
+  deal_resumen: {
+    maxTokens: 700,
+    instruccion: `
+## TU TAREA AHORA
+Escribís el resumen de situación de un deal, para que el agente entienda dónde está parado sin leer todo el historial. Un párrafo corrido, no una lista.
+Cubrí: quién es el cliente, qué busca o qué tiene, cómo viene la relación según el historial de interacciones, en qué estado está hoy, y cuál es el próximo paso que corresponde.
+No repitas datos que el agente ya ve en pantalla (precio, dirección, etapa). Aportá lectura, no inventario.
+
+Formato exacto:
+{"speech":"el mismo resumen para escuchar","resumen":"un párrafo de 3 a 5 frases","proximo_paso":"una frase con la acción que sigue"}`,
+    normalizar: (p) => {
+      if (!p.resumen && p.speech) p.resumen = p.speech;
+      if (!p.resumen) p.resumen = "Todavía no hay suficiente historial para armar un resumen de este deal.";
+      if (!p.proximo_paso) p.proximo_paso = "Definí y agendá el próximo paso.";
+      if (!p.speech) p.speech = `${p.resumen} ${p.proximo_paso}`;
+      return p;
+    },
+    fallback: ({ deal = {} } = {}) => {
+      const resumen = deal.cliente
+        ? `No pude conectarme para armar el resumen. El deal con ${deal.cliente} sigue activo y su historial está en la pestaña de Actividad.`
+        : "No pude conectarme para armar el resumen. El historial completo está en la pestaña de Actividad.";
+      return { speech: resumen, resumen, proximo_paso: "Revisá la última interacción y definí el próximo paso." };
+    },
+  },
+
+  rex_sugiere: {
+    maxTokens: 400,
+    instruccion: `
+## TU TAREA AHORA
+Das UNA sugerencia contextual sobre este deal. Una sola, la más útil ahora mismo. Breve: una o dos frases.
+Elegí también el tipo de acción que la resuelve, para que el agente la ejecute de un click.
+Los tipos posibles son: contacto, tarea, visita, nota, etapa.
+
+Formato exacto:
+{"speech":"la sugerencia dicha en voz alta","sugerencia":"una o dos frases","accion":{"texto":"label corto del boton, maximo 4 palabras","tipo":"contacto"}}`,
+    normalizar: (p) => {
+      const TIPOS = ["contacto", "tarea", "visita", "nota", "etapa"];
+      if (!p.sugerencia && p.speech) p.sugerencia = p.speech;
+      if (!p.sugerencia) p.sugerencia = "Revisá cuándo fue el último contacto y dejá agendado el próximo paso.";
+      if (!p.accion || typeof p.accion !== "object") p.accion = {};
+      if (!p.accion.texto) p.accion.texto = "Registrar contacto";
+      if (!TIPOS.includes(p.accion.tipo)) p.accion.tipo = "contacto";
+      if (!p.speech) p.speech = p.sugerencia;
+      return p;
+    },
+    fallback: () => ({
+      speech: "No pude conectarme. Revisá cuándo fue el último contacto y dejá agendado el próximo paso.",
+      sugerencia: "Revisá cuándo fue el último contacto y dejá agendado el próximo paso.",
+      accion: { texto: "Registrar contacto", tipo: "contacto" },
+    }),
+  },
+};
+
+function resolverCapa(trigger) {
+  if (CAPAS_TAREA[trigger]) return { nombre: trigger, capa: CAPAS_TAREA[trigger] };
+  console.warn(`[Rex] Trigger desconocido "${trigger}", usando ${TRIGGER_DEFAULT}`);
+  return { nombre: TRIGGER_DEFAULT, capa: CAPAS_TAREA[TRIGGER_DEFAULT] };
+}
+
+const buildSystemPrompt = (capa) => REX_BASE + REGLA_SALIDA + "\n" + capa.instruccion;
 
 // ─── MODEL DISCOVERY ────────────────────────────────────────────
 const MODEL_CACHE = { model: null, timestamp: 0 };
@@ -63,9 +240,7 @@ function rankModel(id) {
 
 async function getBestModel(client) {
   const now = Date.now();
-  if (MODEL_CACHE.model && now - MODEL_CACHE.timestamp < MODEL_CACHE_TTL) {
-    return MODEL_CACHE.model;
-  }
+  if (MODEL_CACHE.model && now - MODEL_CACHE.timestamp < MODEL_CACHE_TTL) return MODEL_CACHE.model;
   try {
     const response = await client.models.list();
     const models = (response.data || []).filter(m => m.id.startsWith("claude"));
@@ -103,8 +278,7 @@ const PROVIDERS = [{ provider: anthropicProvider, active: true }];
 const RETRY_ATTEMPTS = 2;
 
 async function callProviders(params) {
-  const active = PROVIDERS.filter(p => p.active);
-  for (const { provider } of active) {
+  for (const { provider } of PROVIDERS.filter(p => p.active)) {
     for (let attempt = 1; attempt <= RETRY_ATTEMPTS; attempt++) {
       try {
         return await provider.complete(params);
@@ -118,70 +292,31 @@ async function callProviders(params) {
   throw new Error("ALL_PROVIDERS_FAILED");
 }
 
-// ─── FALLBACK LOCAL ──────────────────────────────────────────────
-function buildFallbackResponse({ deals = [], metas = {} }) {
-  const acciones = [];
-  const coldDeals = [...deals]
-    .filter(d => (d.dias_sin_contacto || 0) > 5)
-    .sort((a, b) => b.dias_sin_contacto - a.dias_sin_contacto)
-    .slice(0, 2);
-
-  coldDeals.forEach((deal, i) => {
-    acciones.push({
-      texto: `Retomar contacto con ${deal.cliente} — lleva ${deal.dias_sin_contacto} dias sin movimiento`,
-      deal_id: deal.id || null,
-      prioridad: i + 1,
-    });
-  });
-
-  const conexFaltantes = (metas.conexiones_semana?.meta || 15) - (metas.conexiones_semana?.actual || 0);
-  if (conexFaltantes > 0) {
-    acciones.push({
-      texto: `Cerrar ${conexFaltantes} conexiones cara a cara para alcanzar la meta semanal`,
-      deal_id: null,
-      prioridad: acciones.length + 1,
-    });
-  }
-
-  return {
-    speech: "No pude conectarme en este momento, pero arme tu foco con lo que se de tu cartera.",
-    diagnostico: "No pude conectarme en este momento, pero arme tu foco con lo que se de tu cartera.",
-    acciones: acciones.length > 0 ? acciones : [
-      { texto: "Revisa tus deals activos y agenda al menos 3 contactos para hoy", deal_id: null, prioridad: 1 },
-    ],
-    cierre: "Cada accion suma. Vamos.",
-    _fallback: true,
-  };
-}
-
 // ─── JSON EXTRACTOR ──────────────────────────────────────────────
 function extractJSON(text) {
   if (!text) return null;
   try { return JSON.parse(text.trim()); } catch {}
-  const start = text.indexOf('{');
+  const start = text.indexOf("{");
   if (start === -1) return null;
-  let inString = false;
-  let escape = false;
-  let depth = 0;
+  let inString = false, escape = false, depth = 0;
   for (let i = start; i < text.length; i++) {
     const ch = text[i];
     if (escape) { escape = false; continue; }
-    if (ch === '\\' && inString) { escape = true; continue; }
+    if (ch === "\\" && inString) { escape = true; continue; }
     if (ch === '"') { inString = !inString; continue; }
     if (inString) continue;
-    if (ch === '{') depth++;
-    else if (ch === '}') {
+    if (ch === "{") depth++;
+    else if (ch === "}") {
       depth--;
       if (depth === 0) {
-        try { return JSON.parse(text.substring(start, i + 1)); }
-        catch { return null; }
+        try { return JSON.parse(text.substring(start, i + 1)); } catch { return null; }
       }
     }
   }
   return null;
 }
 
-// ─── HANDLER PRINCIPAL ──────────────────────────────────────────
+// ─── HANDLER ────────────────────────────────────────────────────
 const TIMEOUT_MS = 20000;
 
 module.exports = async function handler(req, res) {
@@ -195,40 +330,33 @@ module.exports = async function handler(req, res) {
   if (!context?.agente) return res.status(400).json({ error: "Falta el contexto del agente" });
 
   // STT_HOOK: context.transcript (voz a texto) entrara aqui en el futuro.
+  // El canal se lee en context.channel — por ahora siempre 'text'.
+
+  const { nombre: triggerNombre, capa } = resolverCapa(context.trigger);
 
   try {
     const result = await Promise.race([
       callProviders({
-        systemPrompt: REX_SYSTEM_PROMPT,
+        systemPrompt: buildSystemPrompt(capa),
         userMessage: JSON.stringify(context),
-        maxTokens: 1024,
+        maxTokens: capa.maxTokens,
       }),
       new Promise((_, reject) => setTimeout(() => reject(new Error("TIMEOUT")), TIMEOUT_MS)),
     ]);
 
-    console.log("[Rex] Raw:", result.text ? result.text.substring(0, 200) : "undefined");
+    console.log(`[Rex] ${triggerNombre} · raw: ${result.text ? result.text.substring(0, 160) : "undefined"}`);
 
-    // TTS_HOOK: result.speech se alimenta al servicio de sintesis de voz aqui.
+    // TTS_HOOK: parsed.speech se alimenta al servicio de sintesis de voz aqui.
     // Ejemplo futuro: const audioUrl = await ttsService.synthesize(parsed.speech)
 
-    let parsed = extractJSON(result.text);
-    if (!parsed) {
-      parsed = { speech: result.text, diagnostico: result.text, acciones: [], cierre: "" };
-    }
-
-    if (!parsed.diagnostico && parsed.speech) parsed.diagnostico = parsed.speech;
-    if (!parsed.diagnostico) parsed.diagnostico = "Contame que estas trabajando para ayudarte mejor.";
-    if (!parsed.cierre) parsed.cierre = "Cada accion suma. Vamos.";
-    if (!parsed.acciones || !parsed.acciones.length) {
-      parsed.acciones = [{ texto: "Revisa tus deals activos y agenda 3 contactos para hoy", deal_id: null, prioridad: 1 }];
-    }
+    const parsed = capa.normalizar(extractJSON(result.text) || { speech: result.text }, context);
 
     return res.status(200).json({
       ...parsed,
-      _meta: { provider: result.provider, model: result.model },
+      _meta: { provider: result.provider, model: result.model, trigger: triggerNombre },
     });
   } catch (err) {
-    console.error(`[Rex] Fatal: ${err.message}`);
-    return res.status(200).json(buildFallbackResponse(context));
+    console.error(`[Rex] Fatal en ${triggerNombre}: ${err.message}`);
+    return res.status(200).json({ ...capa.fallback(context), _fallback: true, _meta: { trigger: triggerNombre } });
   }
 };
