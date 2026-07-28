@@ -76,30 +76,38 @@ Tu respuesta empieza EXACTAMENTE con el carácter { y termina EXACTAMENTE con el
 No agregues ningún texto antes ni después del JSON.
 No hagas auto-correcciones ni escribas frases como "perdón, corrijo el formato".
 No uses backticks ni markdown.
+Respetá los límites de extensión de tu tarea: una respuesta que se corta a la mitad es una respuesta perdida.
 El campo "speech" siempre es la versión hablada: fluye natural leída en voz alta, sin viñetas, sin asteriscos, sin numeración.`;
 
 // ─── CAPAS DE TAREA ─────────────────────────────────────────────
-// Una por trigger. Corta: qué se pide y en qué formato.
-// Cada capa trae su normalización y su fallback, así el handler
-// no sabe nada de formatos particulares.
 
 const TRIGGER_DEFAULT = "dashboard_foco_dia";
 
 const CAPAS_TAREA = {
   dashboard_foco_dia: {
-    maxTokens: 1024,
+    maxTokens: 1500,
     instruccion: `
 ## TU TAREA AHORA
 Mirás toda la cartera del agente y definís el foco del día. Priorizá en este orden: lo más cerca de generar plata, lo que está en riesgo de perderse, y el volumen que falta para sostener el embudo.
 Máximo 4 acciones, mínimo 1. Si no hay deals, aconsejá cómo construir la cartera.
 
+LÍMITES DE EXTENSIÓN, respetalos:
+- "diagnostico": máximo 3 frases.
+- cada "texto" de acción: una sola frase.
+- "cierre": una frase.
+- "speech": máximo 6 frases.
+
 Formato exacto:
 {"speech":"lo que dirías en voz alta","diagnostico":"2-3 frases sobre el momento del negocio y qué importa hoy","acciones":[{"texto":"accion concreta","deal_id":"id o null","prioridad":1}],"cierre":"frase de cierre breve"}`,
-    normalizar: (p, ctx) => {
+    normalizar: (p) => {
       if (!p.diagnostico && p.speech) p.diagnostico = p.speech;
       if (!p.diagnostico) p.diagnostico = "Contame qué estás trabajando para ayudarte mejor.";
       if (!p.cierre) p.cierre = "Cada acción suma. Vamos.";
       if (!Array.isArray(p.acciones) || !p.acciones.length) {
+        p.acciones = [{ texto: "Revisá tus deals activos y agendá 3 contactos para hoy", deal_id: null, prioridad: 1 }];
+      }
+      p.acciones = p.acciones.filter(a => a && typeof a.texto === "string" && a.texto.trim().length > 0);
+      if (!p.acciones.length) {
         p.acciones = [{ texto: "Revisá tus deals activos y agendá 3 contactos para hoy", deal_id: null, prioridad: 1 }];
       }
       if (!p.speech) p.speech = `${p.diagnostico} ${p.acciones.map(a => a.texto).join(". ")}. ${p.cierre}`;
@@ -138,11 +146,13 @@ Formato exacto:
   },
 
   deal_detail: {
-    maxTokens: 1024,
+    maxTokens: 1200,
     instruccion: `
 ## TU TAREA AHORA
 Te preguntan qué hacer con UN deal puntual. Mirá su etapa, cuánto hace que no hay movimiento, si tiene próximo paso agendado y qué dice su historial. Respondé sobre ESE deal, no sobre la cartera.
 Máximo 4 acciones, mínimo 1. Concretas: con nombre, canal y momento.
+
+LÍMITES DE EXTENSIÓN: "diagnostico" máximo 3 frases, cada acción una frase, "cierre" una frase, "speech" máximo 6 frases.
 
 Formato exacto:
 {"speech":"lo que dirías en voz alta","diagnostico":"2-3 frases sobre en qué punto está este deal y qué lo traba","acciones":[{"texto":"accion concreta","deal_id":"id del deal","prioridad":1}],"cierre":"frase de cierre breve"}`,
@@ -165,12 +175,14 @@ Formato exacto:
   },
 
   deal_resumen: {
-    maxTokens: 700,
+    maxTokens: 800,
     instruccion: `
 ## TU TAREA AHORA
 Escribís el resumen de situación de un deal, para que el agente entienda dónde está parado sin leer todo el historial. Un párrafo corrido, no una lista.
-Cubrí: quién es el cliente, qué busca o qué tiene, cómo viene la relación según el historial de interacciones, en qué estado está hoy, y cuál es el próximo paso que corresponde.
+Cubrí: quién es el cliente, qué busca o qué tiene, cómo viene la relación según el historial, en qué estado está hoy, y cuál es el próximo paso que corresponde.
 No repitas datos que el agente ya ve en pantalla (precio, dirección, etapa). Aportá lectura, no inventario.
+
+LÍMITES: "resumen" entre 3 y 5 frases. "proximo_paso" una frase.
 
 Formato exacto:
 {"speech":"el mismo resumen para escuchar","resumen":"un párrafo de 3 a 5 frases","proximo_paso":"una frase con la acción que sigue"}`,
@@ -193,7 +205,7 @@ Formato exacto:
     maxTokens: 400,
     instruccion: `
 ## TU TAREA AHORA
-Das UNA sugerencia contextual sobre este deal. Una sola, la más útil ahora mismo. Breve: una o dos frases.
+Das UNA sugerencia contextual sobre este deal. Una sola, la más útil ahora mismo. Una o dos frases, no más.
 Elegí también el tipo de acción que la resuelve, para que el agente la ejecute de un click.
 Los tipos posibles son: contacto, tarea, visita, nota, etapa.
 
@@ -270,7 +282,7 @@ const anthropicProvider = {
     });
     const textBlock = msg.content.find(b => b.type === "text");
     const text = textBlock ? textBlock.text : JSON.stringify(msg.content);
-    return { text, model, provider: "anthropic" };
+    return { text, model, provider: "anthropic", stop_reason: msg.stop_reason };
   },
 };
 
@@ -293,24 +305,42 @@ async function callProviders(params) {
 }
 
 // ─── JSON EXTRACTOR ──────────────────────────────────────────────
+// Recupera el JSON aunque venga con texto alrededor. Si la respuesta
+// quedó truncada por max_tokens, intenta cerrar las estructuras
+// abiertas para salvar lo que llegó completo.
 function extractJSON(text) {
   if (!text) return null;
   try { return JSON.parse(text.trim()); } catch {}
   const start = text.indexOf("{");
   if (start === -1) return null;
-  let inString = false, escape = false, depth = 0;
+
+  const stack = [];
+  let inString = false, escape = false;
   for (let i = start; i < text.length; i++) {
     const ch = text[i];
     if (escape) { escape = false; continue; }
     if (ch === "\\" && inString) { escape = true; continue; }
     if (ch === '"') { inString = !inString; continue; }
     if (inString) continue;
-    if (ch === "{") depth++;
-    else if (ch === "}") {
-      depth--;
-      if (depth === 0) {
+    if (ch === "{" || ch === "[") stack.push(ch);
+    else if (ch === "}" || ch === "]") {
+      stack.pop();
+      if (stack.length === 0) {
         try { return JSON.parse(text.substring(start, i + 1)); } catch { return null; }
       }
+    }
+  }
+
+  if (stack.length) {
+    let salvage = text.substring(start);
+    if (inString) salvage += '"';
+    for (let i = stack.length - 1; i >= 0; i--) salvage += stack[i] === "{" ? "}" : "]";
+    try {
+      const parsed = JSON.parse(salvage);
+      console.warn("[Rex] JSON truncado, recuperado parcialmente");
+      return parsed;
+    } catch {
+      return null;
     }
   }
   return null;
@@ -333,6 +363,8 @@ module.exports = async function handler(req, res) {
   // El canal se lee en context.channel — por ahora siempre 'text'.
 
   const { nombre: triggerNombre, capa } = resolverCapa(context.trigger);
+  const responder = (payload, extra = {}) =>
+    res.status(200).json({ ...payload, ...extra, _meta: { ...(extra._meta || {}), trigger: triggerNombre } });
 
   try {
     const result = await Promise.race([
@@ -344,19 +376,27 @@ module.exports = async function handler(req, res) {
       new Promise((_, reject) => setTimeout(() => reject(new Error("TIMEOUT")), TIMEOUT_MS)),
     ]);
 
+    if (result.stop_reason === "max_tokens") {
+      console.warn(`[Rex] ${triggerNombre} · respuesta truncada por max_tokens (${capa.maxTokens})`);
+    }
     console.log(`[Rex] ${triggerNombre} · raw: ${result.text ? result.text.substring(0, 160) : "undefined"}`);
+
+    // NUNCA devolver texto sin parsear como contenido: si no se puede
+    // parsear, va el fallback de la capa. Volcar el crudo a la pantalla
+    // le muestra JSON al agente.
+    const extraido = extractJSON(result.text);
+    if (!extraido) {
+      console.error(`[Rex] ${triggerNombre} · no se pudo parsear, usando fallback`);
+      return responder(capa.fallback(context), { _fallback: true });
+    }
 
     // TTS_HOOK: parsed.speech se alimenta al servicio de sintesis de voz aqui.
     // Ejemplo futuro: const audioUrl = await ttsService.synthesize(parsed.speech)
+    const parsed = capa.normalizar(extraido, context);
 
-    const parsed = capa.normalizar(extractJSON(result.text) || { speech: result.text }, context);
-
-    return res.status(200).json({
-      ...parsed,
-      _meta: { provider: result.provider, model: result.model, trigger: triggerNombre },
-    });
+    return responder(parsed, { _meta: { provider: result.provider, model: result.model } });
   } catch (err) {
     console.error(`[Rex] Fatal en ${triggerNombre}: ${err.message}`);
-    return res.status(200).json({ ...capa.fallback(context), _fallback: true, _meta: { trigger: triggerNombre } });
+    return responder(capa.fallback(context), { _fallback: true });
   }
 };
