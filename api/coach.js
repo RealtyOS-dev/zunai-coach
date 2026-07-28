@@ -2,13 +2,16 @@
 // ZUNAI · Rex Coach API
 //
 // ESTRUCTURA EN CAPAS
-//   REX_BASE      · quién es Rex y qué sabe. Reemplazable en bloque.
-//   REGLA_SALIDA  · restricción del canal. NO tocar al reescribir la base.
-//   CAPAS_TAREA   · una por trigger: qué se pide, en qué formato, cómo
-//                   se normaliza y qué responde si la API falla.
+//   REX_BASE       · quién es Rex y qué sabe. Reemplazable en bloque.
+//   REGLAS_SALIDA  · una por canal (text / voice). Restricción del medio.
+//   CAPAS_TAREA    · una por trigger, partida en dos:
+//                      tarea   → qué se pide (igual en todo canal)
+//                      formato → el schema (solo canales estructurados)
 //
-// El prompt enviado = REX_BASE + REGLA_SALIDA + capa del trigger.
-// Para agregar un trigger: sumar una entrada a CAPAS_TAREA. Nada más.
+// El prompt enviado = REX_BASE + regla del canal + tarea + [formato]
+//
+// Agregar un trigger: una entrada en CAPAS_TAREA.
+// Agregar un canal:   una entrada en REGLAS_SALIDA. Nada más.
 //
 // El modelo se selecciona AUTOMÁTICAMENTE. Nunca hardcodear uno acá.
 // ═══════════════════════════════════════════════════════════════
@@ -16,9 +19,9 @@
 const Anthropic = require("@anthropic-ai/sdk");
 
 // ─── CAPA BASE ──────────────────────────────────────────────────
-// Identidad, conocimiento del negocio y estilo. Nada de formato.
-// Cuando exista el prompt definitivo de Rex, se reemplaza esta
-// constante entera y las capas de tarea siguen funcionando igual.
+// Identidad, conocimiento del negocio y estilo. Nada de formato,
+// nada de canal. Cuando exista el prompt definitivo de Rex se
+// reemplaza esta constante entera y todo lo demás sigue igual.
 
 const REX_BASE = `Sos Rex, el coach de negocio de Zunai, la plataforma de gestión y coaching para agentes inmobiliarios en LatAm.
 
@@ -63,13 +66,20 @@ Nunca desmoralices. Mostrale el camino con calidez, nunca lo hagas sentir mal po
 - Breve. El agente está trabajando, no leyendo.
 - No inventes datos que no tenés.`;
 
-// ─── REGLA DE SALIDA ────────────────────────────────────────────
-// Restricción del canal, no de la personalidad.
-// NO mover esto adentro de REX_BASE: si se reemplaza la base, esta
-// regla tiene que sobrevivir. Sin ella el modelo agrega preámbulos
-// y correcciones ("perdón, corrijo el formato") que rompen el parseo.
+// ─── REGLAS DE SALIDA POR CANAL ─────────────────────────────────
+// Restricción del medio, no de la personalidad ni de la tarea.
+// NO mover esto adentro de REX_BASE: si se reemplaza la base entera
+// por el prompt definitivo, estas reglas tienen que sobrevivir.
+//
+// usa_formato indica si al prompt se le adjunta el schema JSON de la
+// tarea. En voz no hay schema: la respuesta es habla corrida.
 
-const REGLA_SALIDA = `
+const CANAL_DEFAULT = "text";
+
+const REGLAS_SALIDA = {
+  text: {
+    usa_formato: true,
+    regla: `
 
 ## FORMATO DE SALIDA — CRÍTICO
 Tu respuesta empieza EXACTAMENTE con el carácter { y termina EXACTAMENTE con el carácter }
@@ -77,35 +87,55 @@ No agregues ningún texto antes ni después del JSON.
 No hagas auto-correcciones ni escribas frases como "perdón, corrijo el formato".
 No uses backticks ni markdown.
 Respetá los límites de extensión de tu tarea: una respuesta que se corta a la mitad es una respuesta perdida.
-El campo "speech" siempre es la versión hablada: fluye natural leída en voz alta, sin viñetas, sin asteriscos, sin numeración.`;
+El campo "speech" siempre es la versión hablada: fluye natural leída en voz alta, sin viñetas, sin asteriscos, sin numeración.`,
+  },
+
+  // voice: PENDIENTE — no implementar todavía.
+  // {
+  //   usa_formato: false,
+  //   regla: `Respondés hablando. Sin JSON, sin campos, sin viñetas,
+  //           sin numeración. Habla corrida, con la cadencia de alguien
+  //           que le está contando algo a un colega.`,
+  // }
+  // Al tener usa_formato en false, el schema de la tarea no se adjunta
+  // y no hay instrucciones contradictorias. Ningún trigger se toca.
+  // El handler necesitará saltear extractJSON para este canal.
+};
+
+function resolverCanal(channel) {
+  const canal = channel || CANAL_DEFAULT;
+  if (REGLAS_SALIDA[canal]) return canal;
+  console.warn(`[Rex] Canal desconocido "${canal}", usando ${CANAL_DEFAULT}`);
+  return CANAL_DEFAULT;
+}
 
 // ─── CAPAS DE TAREA ─────────────────────────────────────────────
+// tarea   · qué se le pide a Rex. Independiente del canal.
+// formato · cómo lo codifica. Solo se adjunta en canales estructurados.
 
 const TRIGGER_DEFAULT = "dashboard_foco_dia";
 
 const CAPAS_TAREA = {
   dashboard_foco_dia: {
     maxTokens: 1500,
-    instruccion: `
+    tarea: `
 ## TU TAREA AHORA
 Mirás toda la cartera del agente y definís el foco del día. Priorizá en este orden: lo más cerca de generar plata, lo que está en riesgo de perderse, y el volumen que falta para sostener el embudo.
-Máximo 4 acciones, mínimo 1. Si no hay deals, aconsejá cómo construir la cartera.
 
-LÍMITES DE EXTENSIÓN, respetalos:
-- "diagnostico": máximo 3 frases.
-- cada "texto" de acción: una sola frase.
-- "cierre": una frase.
-- "speech": máximo 6 frases.
+Producís tres cosas:
+- Un diagnóstico del momento del negocio y qué importa hoy: máximo 3 frases.
+- Entre 1 y 4 acciones concretas, una sola frase cada una, ordenadas por prioridad, indicando a qué deal corresponden cuando aplique.
+- Un cierre de una frase.
 
+Si la cartera está vacía, aconsejá cómo construirla.`,
+    formato: `
 Formato exacto:
-{"speech":"lo que dirías en voz alta","diagnostico":"2-3 frases sobre el momento del negocio y qué importa hoy","acciones":[{"texto":"accion concreta","deal_id":"id o null","prioridad":1}],"cierre":"frase de cierre breve"}`,
+{"speech":"lo que dirías en voz alta, máximo 6 frases","diagnostico":"el diagnóstico","acciones":[{"texto":"la acción","deal_id":"id del deal o null","prioridad":1}],"cierre":"el cierre"}`,
     normalizar: (p) => {
       if (!p.diagnostico && p.speech) p.diagnostico = p.speech;
       if (!p.diagnostico) p.diagnostico = "Contame qué estás trabajando para ayudarte mejor.";
       if (!p.cierre) p.cierre = "Cada acción suma. Vamos.";
-      if (!Array.isArray(p.acciones) || !p.acciones.length) {
-        p.acciones = [{ texto: "Revisá tus deals activos y agendá 3 contactos para hoy", deal_id: null, prioridad: 1 }];
-      }
+      if (!Array.isArray(p.acciones)) p.acciones = [];
       p.acciones = p.acciones.filter(a => a && typeof a.texto === "string" && a.texto.trim().length > 0);
       if (!p.acciones.length) {
         p.acciones = [{ texto: "Revisá tus deals activos y agendá 3 contactos para hoy", deal_id: null, prioridad: 1 }];
@@ -147,15 +177,17 @@ Formato exacto:
 
   deal_detail: {
     maxTokens: 1200,
-    instruccion: `
+    tarea: `
 ## TU TAREA AHORA
 Te preguntan qué hacer con UN deal puntual. Mirá su etapa, cuánto hace que no hay movimiento, si tiene próximo paso agendado y qué dice su historial. Respondé sobre ESE deal, no sobre la cartera.
-Máximo 4 acciones, mínimo 1. Concretas: con nombre, canal y momento.
 
-LÍMITES DE EXTENSIÓN: "diagnostico" máximo 3 frases, cada acción una frase, "cierre" una frase, "speech" máximo 6 frases.
-
+Producís tres cosas:
+- Un diagnóstico de en qué punto está este deal y qué lo traba: máximo 3 frases.
+- Entre 1 y 4 acciones concretas, una sola frase cada una, con nombre, canal y momento.
+- Un cierre de una frase.`,
+    formato: `
 Formato exacto:
-{"speech":"lo que dirías en voz alta","diagnostico":"2-3 frases sobre en qué punto está este deal y qué lo traba","acciones":[{"texto":"accion concreta","deal_id":"id del deal","prioridad":1}],"cierre":"frase de cierre breve"}`,
+{"speech":"lo que dirías en voz alta, máximo 6 frases","diagnostico":"el diagnóstico","acciones":[{"texto":"la acción","deal_id":"id del deal","prioridad":1}],"cierre":"el cierre"}`,
     normalizar: (p, ctx) => CAPAS_TAREA.dashboard_foco_dia.normalizar(p, ctx),
     fallback: ({ deal = {} } = {}) => {
       const diagnostico = "No pude conectarme en este momento. Revisá el historial del deal y definí el próximo paso.";
@@ -176,16 +208,18 @@ Formato exacto:
 
   deal_resumen: {
     maxTokens: 800,
-    instruccion: `
+    tarea: `
 ## TU TAREA AHORA
-Escribís el resumen de situación de un deal, para que el agente entienda dónde está parado sin leer todo el historial. Un párrafo corrido, no una lista.
-Cubrí: quién es el cliente, qué busca o qué tiene, cómo viene la relación según el historial, en qué estado está hoy, y cuál es el próximo paso que corresponde.
-No repitas datos que el agente ya ve en pantalla (precio, dirección, etapa). Aportá lectura, no inventario.
+Escribís el resumen de situación de un deal, para que el agente entienda dónde está parado sin leer todo el historial.
 
-LÍMITES: "resumen" entre 3 y 5 frases. "proximo_paso" una frase.
+Producís dos cosas:
+- Un resumen de 3 a 5 frases corridas, no una lista: quién es el cliente, qué busca o qué tiene, cómo viene la relación según el historial de interacciones, y en qué estado está hoy.
+- El próximo paso que corresponde: una frase.
 
+No repitas datos que el agente ya ve en pantalla (precio, dirección, etapa). Aportá lectura, no inventario.`,
+    formato: `
 Formato exacto:
-{"speech":"el mismo resumen para escuchar","resumen":"un párrafo de 3 a 5 frases","proximo_paso":"una frase con la acción que sigue"}`,
+{"speech":"el mismo resumen para escuchar","resumen":"el párrafo","proximo_paso":"la frase"}`,
     normalizar: (p) => {
       if (!p.resumen && p.speech) p.resumen = p.speech;
       if (!p.resumen) p.resumen = "Todavía no hay suficiente historial para armar un resumen de este deal.";
@@ -203,12 +237,11 @@ Formato exacto:
 
   rex_sugiere: {
     maxTokens: 400,
-    instruccion: `
+    tarea: `
 ## TU TAREA AHORA
 Das UNA sugerencia contextual sobre este deal. Una sola, la más útil ahora mismo. Una o dos frases, no más.
-Elegí también el tipo de acción que la resuelve, para que el agente la ejecute de un click.
-Los tipos posibles son: contacto, tarea, visita, nota, etapa.
-
+Elegí también qué tipo de acción la resuelve, para que el agente la ejecute de un click. Los tipos posibles son: contacto, tarea, visita, nota, etapa.`,
+    formato: `
 Formato exacto:
 {"speech":"la sugerencia dicha en voz alta","sugerencia":"una o dos frases","accion":{"texto":"label corto del boton, maximo 4 palabras","tipo":"contacto"}}`,
     normalizar: (p) => {
@@ -235,7 +268,13 @@ function resolverCapa(trigger) {
   return { nombre: TRIGGER_DEFAULT, capa: CAPAS_TAREA[TRIGGER_DEFAULT] };
 }
 
-const buildSystemPrompt = (capa) => REX_BASE + REGLA_SALIDA + "\n" + capa.instruccion;
+// identidad + regla del canal + tarea + (schema solo si el canal lo usa)
+function buildSystemPrompt(capa, canal) {
+  const reglaCanal = REGLAS_SALIDA[canal];
+  let prompt = REX_BASE + reglaCanal.regla + "\n" + capa.tarea;
+  if (reglaCanal.usa_formato) prompt += "\n" + capa.formato;
+  return prompt;
+}
 
 // ─── MODEL DISCOVERY ────────────────────────────────────────────
 const MODEL_CACHE = { model: null, timestamp: 0 };
@@ -306,8 +345,8 @@ async function callProviders(params) {
 
 // ─── JSON EXTRACTOR ──────────────────────────────────────────────
 // Recupera el JSON aunque venga con texto alrededor. Si la respuesta
-// quedó truncada por max_tokens, intenta cerrar las estructuras
-// abiertas para salvar lo que llegó completo.
+// quedó truncada por max_tokens, cierra las estructuras abiertas para
+// salvar lo que llegó completo.
 function extractJSON(text) {
   if (!text) return null;
   try { return JSON.parse(text.trim()); } catch {}
@@ -360,16 +399,16 @@ module.exports = async function handler(req, res) {
   if (!context?.agente) return res.status(400).json({ error: "Falta el contexto del agente" });
 
   // STT_HOOK: context.transcript (voz a texto) entrara aqui en el futuro.
-  // El canal se lee en context.channel — por ahora siempre 'text'.
-
+  const canal = resolverCanal(context.channel);
   const { nombre: triggerNombre, capa } = resolverCapa(context.trigger);
+
   const responder = (payload, extra = {}) =>
-    res.status(200).json({ ...payload, ...extra, _meta: { ...(extra._meta || {}), trigger: triggerNombre } });
+    res.status(200).json({ ...payload, ...extra, _meta: { ...(extra._meta || {}), trigger: triggerNombre, canal } });
 
   try {
     const result = await Promise.race([
       callProviders({
-        systemPrompt: buildSystemPrompt(capa),
+        systemPrompt: buildSystemPrompt(capa, canal),
         userMessage: JSON.stringify(context),
         maxTokens: capa.maxTokens,
       }),
@@ -379,8 +418,12 @@ module.exports = async function handler(req, res) {
     if (result.stop_reason === "max_tokens") {
       console.warn(`[Rex] ${triggerNombre} · respuesta truncada por max_tokens (${capa.maxTokens})`);
     }
-    console.log(`[Rex] ${triggerNombre} · raw: ${result.text ? result.text.substring(0, 160) : "undefined"}`);
+    console.log(`[Rex] ${triggerNombre}/${canal} · raw: ${result.text ? result.text.substring(0, 160) : "undefined"}`);
 
+    // Canales sin formato estructurado (voz) van a saltear este bloque
+    // y devolver el texto tal cual. Por ahora todos los canales activos
+    // usan JSON.
+    //
     // NUNCA devolver texto sin parsear como contenido: si no se puede
     // parsear, va el fallback de la capa. Volcar el crudo a la pantalla
     // le muestra JSON al agente.
@@ -391,7 +434,6 @@ module.exports = async function handler(req, res) {
     }
 
     // TTS_HOOK: parsed.speech se alimenta al servicio de sintesis de voz aqui.
-    // Ejemplo futuro: const audioUrl = await ttsService.synthesize(parsed.speech)
     const parsed = capa.normalizar(extraido, context);
 
     return responder(parsed, { _meta: { provider: result.provider, model: result.model } });
