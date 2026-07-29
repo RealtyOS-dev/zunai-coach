@@ -413,10 +413,35 @@ function buildSystemPrompt(capa, canal) {
 }
 
 // ─── MODEL DISCOVERY ────────────────────────────────────────────
-const MODEL_CACHE = { model: null, timestamp: 0 };
+// El modelo se descubre solo y se cachea 24hs, por familia.
+// Nunca hardcodear un nombre de modelo fuera de los fallbacks.
+
+// Familia de modelo por trigger. Los que no figuran usan el mejor
+// disponible (hoy Opus). Sonnet para tareas de estructuración: misma
+// calidad, un tercio del tiempo, mucho menos costo. Opus donde el
+// criterio de negocio es el producto.
+const MODELO_POR_TRIGGER = {
+  criterios_ponderar:  "sonnet",
+  feedback_visita:     "sonnet",
+  comparativa_resumen: "sonnet",
+  rex_sugiere:         "sonnet",
+  // dashboard_foco_dia, deal_detail, deal_resumen y
+  // recalibrar_criterios van con el mejor disponible.
+};
+
+const MODEL_CACHE = {};                       // { [familia]: { model, timestamp } }
 const MODEL_CACHE_TTL = 24 * 60 * 60 * 1000;
 const MODEL_FAMILY_RANK = { opus: 3, sonnet: 2, haiku: 1 };
-const MODEL_FALLBACK = "claude-opus-4-7";
+const MODEL_FALLBACK = {
+  mejor:  "claude-opus-4-7",
+  opus:   "claude-opus-4-7",
+  sonnet: "claude-sonnet-5",
+  haiku:  "claude-haiku-4-5-20251001",
+};
+
+function limpiarCacheModelos() {
+  Object.keys(MODEL_CACHE).forEach(k => delete MODEL_CACHE[k]);
+}
 
 function rankModel(id) {
   for (const [family, rank] of Object.entries(MODEL_FAMILY_RANK)) {
@@ -425,30 +450,39 @@ function rankModel(id) {
   return 0;
 }
 
-async function getBestModel(client) {
-  const now = Date.now();
-  if (MODEL_CACHE.model && now - MODEL_CACHE.timestamp < MODEL_CACHE_TTL) return MODEL_CACHE.model;
+async function getBestModel(client, familia) {
+  const key = familia || "mejor";
+  const cached = MODEL_CACHE[key];
+  if (cached && Date.now() - cached.timestamp < MODEL_CACHE_TTL) return cached.model;
+
   try {
     const response = await client.models.list();
-    const models = (response.data || []).filter(m => m.id.startsWith("claude"));
-    if (models.length === 0) throw new Error("No Claude models found");
+    let models = (response.data || []).filter(m => m.id.startsWith("claude"));
+    if (familia) {
+      const deFamilia = models.filter(m => m.id.includes(familia));
+      if (deFamilia.length) {
+        models = deFamilia;
+      } else {
+        console.warn(`[Rex] No hay modelos de familia "${familia}", uso el mejor disponible`);
+      }
+    }
+    if (!models.length) throw new Error("No Claude models found");
     models.sort((a, b) => rankModel(b.id) - rankModel(a.id) || b.id.localeCompare(a.id));
-    MODEL_CACHE.model = models[0].id;
-    MODEL_CACHE.timestamp = now;
-    console.log(`[Rex] Modelo seleccionado: ${MODEL_CACHE.model}`);
-    return MODEL_CACHE.model;
+    MODEL_CACHE[key] = { model: models[0].id, timestamp: Date.now() };
+    console.log(`[Rex] Modelo para "${key}": ${models[0].id}`);
+    return models[0].id;
   } catch (err) {
     console.error(`[Rex] Model discovery fallo: ${err.message}`);
-    return MODEL_FALLBACK;
+    return MODEL_FALLBACK[key] || MODEL_FALLBACK.mejor;
   }
 }
 
 // ─── PROVIDER ABSTRACTION ───────────────────────────────────────
 const anthropicProvider = {
   name: "anthropic",
-  async complete({ systemPrompt, userMessage, maxTokens }) {
+  async complete({ systemPrompt, userMessage, maxTokens, familia }) {
     const client = new Anthropic({ apiKey: process.env.ANTHROPIC_API_KEY });
-    const model = await getBestModel(client);
+    const model = await getBestModel(client, familia);
     const msg = await client.messages.create({
       model,
       max_tokens: maxTokens,
@@ -471,7 +505,7 @@ async function callProviders(params) {
         return await provider.complete(params);
       } catch (err) {
         console.error(`[Rex] ${provider.name} intento ${attempt} fallo: ${err.message}`);
-        if (err.status === 404) MODEL_CACHE.model = null;
+        if (err.status === 404) limpiarCacheModelos();
         if (attempt < RETRY_ATTEMPTS) await new Promise(r => setTimeout(r, 500 * attempt));
       }
     }
@@ -522,7 +556,11 @@ function extractJSON(text) {
 }
 
 // ─── HANDLER ────────────────────────────────────────────────────
-const TIMEOUT_MS = 20000;
+// 30s: margen para los triggers que van con el modelo más potente.
+// El timeout del cliente SIEMPRE tiene que ser mayor que este, si no
+// el fallback nunca llega y el agente ve un error en vez de una
+// respuesta degradada.
+const TIMEOUT_MS = 30000;
 
 module.exports = async function handler(req, res) {
   res.setHeader("Access-Control-Allow-Origin", "*");
@@ -537,28 +575,30 @@ module.exports = async function handler(req, res) {
   // STT_HOOK: context.transcript (voz a texto) entrara aqui en el futuro.
   const canal = resolverCanal(context.channel);
   const { nombre: triggerNombre, capa } = resolverCapa(context.trigger);
+  const familia = MODELO_POR_TRIGGER[triggerNombre] || null;
 
   const responder = (payload, extra = {}) =>
     res.status(200).json({ ...payload, ...extra, _meta: { ...(extra._meta || {}), trigger: triggerNombre, canal } });
 
   try {
+    const inicio = Date.now();
     const result = await Promise.race([
       callProviders({
         systemPrompt: buildSystemPrompt(capa, canal),
         userMessage: JSON.stringify(context),
         maxTokens: capa.maxTokens,
+        familia,
       }),
       new Promise((_, reject) => setTimeout(() => reject(new Error("TIMEOUT")), TIMEOUT_MS)),
     ]);
 
     if (result.stop_reason === "max_tokens") {
-      console.warn(`[Rex] ${triggerNombre} · respuesta truncada por max_tokens (${capa.maxTokens})`);
+      console.warn(`[Rex] ${triggerNombre} · truncado por max_tokens (${capa.maxTokens})`);
     }
-    console.log(`[Rex] ${triggerNombre}/${canal} · raw: ${result.text ? result.text.substring(0, 160) : "undefined"}`);
+    console.log(`[Rex] ${triggerNombre}/${canal} · ${result.model} · ${Date.now() - inicio}ms`);
 
     // NUNCA devolver texto sin parsear como contenido: si no se puede
-    // parsear, va el fallback de la capa. Volcar el crudo a la pantalla
-    // le muestra JSON al agente.
+    // parsear, va el fallback de la capa.
     const extraido = extractJSON(result.text);
     if (!extraido) {
       console.error(`[Rex] ${triggerNombre} · no se pudo parsear, usando fallback`);
