@@ -19,9 +19,6 @@
 const Anthropic = require("@anthropic-ai/sdk");
 
 // ─── CAPA BASE ──────────────────────────────────────────────────
-// Identidad, conocimiento del negocio y estilo. Nada de formato,
-// nada de canal. Cuando exista el prompt definitivo de Rex se
-// reemplaza esta constante entera y todo lo demás sigue igual.
 
 const REX_BASE = `Sos Rex, el coach de negocio de Zunai, la plataforma de gestión y coaching para agentes inmobiliarios en LatAm.
 
@@ -110,8 +107,6 @@ function resolverCanal(channel) {
 }
 
 // ─── CAPAS DE TAREA ─────────────────────────────────────────────
-// tarea   · qué se le pide a Rex. Independiente del canal.
-// formato · cómo lo codifica. Solo se adjunta en canales estructurados.
 
 const TRIGGER_DEFAULT = "dashboard_foco_dia";
 
@@ -260,7 +255,7 @@ Formato exacto:
       accion: { texto: "Registrar contacto", tipo: "contacto" },
     }),
   },
-};
+
   criterios_ponderar: {
     maxTokens: 900,
     tarea: `
@@ -301,7 +296,7 @@ Formato exacto:
 El agente te cuenta cómo fue una visita, en texto libre y desordenado. Ordenalo.
 
 Producís tres cosas:
-- La reacción del cliente: gusto, no_gusto o descarta. "descarta" solo si el cliente la sacó de la lista.
+- La reacción del cliente: gusto, no_gusto o descarta. Poné "descarta" solo si el cliente la sacó de la lista.
 - El comentario limpio: qué dijo el cliente, en dos o tres frases, sin interpretación tuya.
 - Qué criterios mencionó y con qué signo. Sirve para detectar qué le importa de verdad, que no siempre coincide con lo que declaró al principio.
 
@@ -383,6 +378,8 @@ Formato exacto:
       ajustes: [],
     }),
   },
+};
+
 function resolverCapa(trigger) {
   if (CAPAS_TAREA[trigger]) return { nombre: trigger, capa: CAPAS_TAREA[trigger] };
   console.warn(`[Rex] Trigger desconocido "${trigger}", usando ${TRIGGER_DEFAULT}`);
@@ -541,10 +538,6 @@ module.exports = async function handler(req, res) {
     }
     console.log(`[Rex] ${triggerNombre}/${canal} · raw: ${result.text ? result.text.substring(0, 160) : "undefined"}`);
 
-    // Canales sin formato estructurado (voz) van a saltear este bloque
-    // y devolver el texto tal cual. Por ahora todos los canales activos
-    // usan JSON.
-    //
     // NUNCA devolver texto sin parsear como contenido: si no se puede
     // parsear, va el fallback de la capa. Volcar el crudo a la pantalla
     // le muestra JSON al agente.
