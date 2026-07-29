@@ -124,8 +124,10 @@ Producís tres cosas:
 
 Si la cartera está vacía, aconsejá cómo construirla.`,
     formato: `
+Completá primero los campos de datos y dejá "speech" para el final.
+
 Formato exacto:
-{"speech":"lo que dirías en voz alta, máximo 6 frases","diagnostico":"el diagnóstico","acciones":[{"texto":"la acción","deal_id":"id del deal o null","prioridad":1}],"cierre":"el cierre"}`,
+{"diagnostico":"el diagnóstico","acciones":[{"texto":"la acción","deal_id":"id del deal o null","prioridad":1}],"cierre":"el cierre","speech":"lo mismo dicho en voz alta, máximo 6 frases"}`,
     normalizar: (p) => {
       if (!p.diagnostico && p.speech) p.diagnostico = p.speech;
       if (!p.diagnostico) p.diagnostico = "Contame qué estás trabajando para ayudarte mejor.";
@@ -181,8 +183,10 @@ Producís tres cosas:
 - Entre 1 y 4 acciones concretas, una sola frase cada una, con nombre, canal y momento.
 - Un cierre de una frase.`,
     formato: `
+Completá primero los campos de datos y dejá "speech" para el final.
+
 Formato exacto:
-{"speech":"lo que dirías en voz alta, máximo 6 frases","diagnostico":"el diagnóstico","acciones":[{"texto":"la acción","deal_id":"id del deal","prioridad":1}],"cierre":"el cierre"}`,
+{"diagnostico":"el diagnóstico","acciones":[{"texto":"la acción","deal_id":"id del deal","prioridad":1}],"cierre":"el cierre","speech":"lo mismo dicho en voz alta, máximo 6 frases"}`,
     normalizar: (p, ctx) => CAPAS_TAREA.dashboard_foco_dia.normalizar(p, ctx),
     fallback: ({ deal = {} } = {}) => {
       const diagnostico = "No pude conectarme en este momento. Revisá el historial del deal y definí el próximo paso.";
@@ -213,8 +217,10 @@ Producís dos cosas:
 
 No repitas datos que el agente ya ve en pantalla (precio, dirección, etapa). Aportá lectura, no inventario.`,
     formato: `
+Completá primero los campos de datos y dejá "speech" para el final.
+
 Formato exacto:
-{"speech":"el mismo resumen para escuchar","resumen":"el párrafo","proximo_paso":"la frase"}`,
+{"resumen":"el párrafo","proximo_paso":"la frase","speech":"lo mismo para escuchar"}`,
     normalizar: (p) => {
       if (!p.resumen && p.speech) p.resumen = p.speech;
       if (!p.resumen) p.resumen = "Todavía no hay suficiente historial para armar un resumen de este deal.";
@@ -237,8 +243,10 @@ Formato exacto:
 Das UNA sugerencia contextual sobre este deal. Una sola, la más útil ahora mismo. Una o dos frases, no más.
 Elegí también qué tipo de acción la resuelve, para que el agente la ejecute de un click. Los tipos posibles son: contacto, tarea, visita, nota, etapa.`,
     formato: `
+Completá primero los campos de datos y dejá "speech" para el final.
+
 Formato exacto:
-{"speech":"la sugerencia dicha en voz alta","sugerencia":"una o dos frases","accion":{"texto":"label corto del boton, maximo 4 palabras","tipo":"contacto"}}`,
+{"sugerencia":"una o dos frases","accion":{"texto":"label corto del boton, maximo 4 palabras","tipo":"contacto"},"speech":"lo mismo dicho en voz alta"}`,
     normalizar: (p) => {
       const TIPOS = ["contacto", "tarea", "visita", "nota", "etapa"];
       if (!p.sugerencia && p.speech) p.sugerencia = p.speech;
@@ -257,20 +265,23 @@ Formato exacto:
   },
 
   criterios_ponderar: {
-    maxTokens: 900,
+    maxTokens: 1200,
     tarea: `
 ## TU TAREA AHORA
 El agente te cuenta en texto libre qué busca un cliente comprador. Traducilo a criterios ponderados.
 
 Producís tres cosas:
-- Una lista de criterios con peso del 1 al 10, cada uno con una razón de una frase. Entre 4 y 8 criterios.
+- Una lista de criterios con peso del 1 al 10, cada uno con una razón de UNA frase corta. Entre 4 y 8 criterios.
 - Los innegociables: lo que no puede faltar o sería descarte automático. No llevan peso, son filtros.
 - Qué falta preguntar: lo que el agente no mencionó y cambia la búsqueda (forma de pago, urgencia, decisores, si necesita vender primero).
 
-Distinguí lo que el cliente DIJO de lo que el agente INFIERE. Si algo no se dijo, va en "falta_preguntar", no lo inventes como criterio.`,
+Distinguí lo que el cliente DIJO de lo que el agente INFIERE. Si algo no se dijo, va en "falta_preguntar", no lo inventes como criterio.
+Las razones son cortas: una frase, no un párrafo.`,
     formato: `
+Completá primero los campos de datos y dejá "speech" para el final. El speech no pasa de 5 frases.
+
 Formato exacto:
-{"speech":"lo que dirías en voz alta","criterios":[{"nombre":"Zona","peso":9,"razon":"por que ese peso"}],"innegociables":["cochera cubierta"],"falta_preguntar":["forma de pago"]}`,
+{"criterios":[{"nombre":"Zona","peso":9,"razon":"por que ese peso"}],"innegociables":["cochera cubierta"],"falta_preguntar":["forma de pago"],"speech":"resumen hablado de lo anterior, maximo 5 frases"}`,
     normalizar: (p) => {
       if (!Array.isArray(p.criterios)) p.criterios = [];
       p.criterios = p.criterios
@@ -278,7 +289,9 @@ Formato exacto:
         .map(c => ({ ...c, peso: Math.min(10, Math.max(1, Number(c.peso) || 5)) }));
       if (!Array.isArray(p.innegociables)) p.innegociables = [];
       if (!Array.isArray(p.falta_preguntar)) p.falta_preguntar = [];
-      if (!p.speech) p.speech = `Te propongo ${p.criterios.length} criterios.`;
+      if (!p.speech) {
+        p.speech = `Te propongo ${p.criterios.length} criterios y ${p.innegociables.length} innegociables.`;
+      }
       return p;
     },
     fallback: () => ({
@@ -290,7 +303,7 @@ Formato exacto:
   },
 
   feedback_visita: {
-    maxTokens: 600,
+    maxTokens: 700,
     tarea: `
 ## TU TAREA AHORA
 El agente te cuenta cómo fue una visita, en texto libre y desordenado. Ordenalo.
@@ -302,8 +315,10 @@ Producís tres cosas:
 
 Si el agente no dice cómo reaccionó el cliente, no lo adivines: devolvé la reacción vacía.`,
     formato: `
+Completá primero los campos de datos y dejá "speech" para el final.
+
 Formato exacto:
-{"speech":"lo que dirías en voz alta","reaccion":"gusto","comentario":"lo que dijo el cliente","criterios_mencionados":[{"nombre":"Luminosidad","sentimiento":"positivo"}]}`,
+{"reaccion":"gusto","comentario":"lo que dijo el cliente","criterios_mencionados":[{"nombre":"Luminosidad","sentimiento":"positivo"}],"speech":"lo mismo dicho en voz alta"}`,
     normalizar: (p) => {
       const R = ["gusto", "no_gusto", "descarta"];
       if (!R.includes(p.reaccion)) p.reaccion = null;
@@ -333,8 +348,10 @@ Producís dos cosas:
 Nunca menciones puntajes, pesos ni porcentajes: el cliente no ve la ingeniería interna. Hablá de la propiedad, no del método.
 Si alguna falla un innegociable, decilo con claridad y sin rodeos.`,
     formato: `
+Completá primero los campos de datos y dejá "speech" para el final.
+
 Formato exacto:
-{"speech":"el mismo resumen para escuchar","resumen":"3 a 4 frases","recomendacion":"1 o 2 frases"}`,
+{"resumen":"3 a 4 frases","recomendacion":"1 o 2 frases","speech":"lo mismo para escuchar"}`,
     normalizar: (p) => {
       if (!p.resumen && p.speech) p.resumen = p.speech;
       if (!p.resumen) p.resumen = "Todavía no hay suficientes opciones cargadas para comparar.";
@@ -350,7 +367,7 @@ Formato exacto:
   },
 
   recalibrar_criterios: {
-    maxTokens: 700,
+    maxTokens: 800,
     tarea: `
 ## TU TAREA AHORA
 Recibís los criterios ponderados de una búsqueda y las reacciones reales del cliente a las propiedades que visitó. Detectás si los pesos declarados contradicen lo que el cliente decidió.
@@ -361,8 +378,10 @@ Solo señalá una contradicción si los datos la sostienen. Con menos de tres pr
 
 Si la hay, producís: una observación de dos frases dirigida al AGENTE, y los ajustes de peso concretos que proponés.`,
     formato: `
+Completá primero los campos de datos y dejá "speech" para el final.
+
 Formato exacto:
-{"speech":"lo que dirías en voz alta","hay_contradiccion":true,"observacion":"dos frases","ajustes":[{"criterio":"Zona","peso_actual":9,"peso_sugerido":5,"razon":"por que"}]}`,
+{"hay_contradiccion":true,"observacion":"dos frases","ajustes":[{"criterio":"Zona","peso_actual":9,"peso_sugerido":5,"razon":"por que"}],"speech":"lo mismo dicho en voz alta"}`,
     normalizar: (p) => {
       p.hay_contradiccion = p.hay_contradiccion === true;
       if (!Array.isArray(p.ajustes)) p.ajustes = [];
@@ -379,7 +398,6 @@ Formato exacto:
     }),
   },
 };
-
 function resolverCapa(trigger) {
   if (CAPAS_TAREA[trigger]) return { nombre: trigger, capa: CAPAS_TAREA[trigger] };
   console.warn(`[Rex] Trigger desconocido "${trigger}", usando ${TRIGGER_DEFAULT}`);
