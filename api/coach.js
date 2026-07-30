@@ -4,16 +4,12 @@
 // ESTRUCTURA EN CAPAS
 //   REX_BASE       · quién es Rex y qué sabe. Reemplazable en bloque.
 //   REGLAS_SALIDA  · una por canal (text / voice). Restricción del medio.
-//   CAPAS_TAREA    · una por trigger, partida en dos:
-//                      tarea   → qué se pide (igual en todo canal)
-//                      formato → el schema (solo canales estructurados)
+//   CAPAS_TAREA    · una por trigger: tarea, formato, esfuerzo, presupuesto.
 //
-// El prompt enviado = REX_BASE + regla del canal + tarea + [formato]
-//
-// Agregar un trigger: una entrada en CAPAS_TAREA.
-// Agregar un canal:   una entrada en REGLAS_SALIDA. Nada más.
-//
-// El modelo se selecciona AUTOMÁTICAMENTE. Nunca hardcodear uno acá.
+// IMPORTANTE — max_tokens cubre PENSAMIENTO + RESPUESTA.
+// En la familia 5 el pensamiento está activo por defecto y consume el mismo
+// presupuesto. Un max_tokens ajustado al largo de la respuesta corta el JSON
+// a la mitad. Por eso cada capa lleva su `esfuerzo` además de su `maxTokens`.
 // ═══════════════════════════════════════════════════════════════
 
 const Anthropic = require("@anthropic-ai/sdk");
@@ -64,12 +60,6 @@ Nunca desmoralices. Mostrale el camino con calidez, nunca lo hagas sentir mal po
 - No inventes datos que no tenés.`;
 
 // ─── REGLAS DE SALIDA POR CANAL ─────────────────────────────────
-// Restricción del medio, no de la personalidad ni de la tarea.
-// NO mover esto adentro de REX_BASE: si se reemplaza la base entera
-// por el prompt definitivo, estas reglas tienen que sobrevivir.
-//
-// usa_formato indica si al prompt se le adjunta el schema JSON de la
-// tarea. En voz no hay schema: la respuesta es habla corrida.
 
 const CANAL_DEFAULT = "text";
 
@@ -83,20 +73,15 @@ Tu respuesta empieza EXACTAMENTE con el carácter { y termina EXACTAMENTE con el
 No agregues ningún texto antes ni después del JSON.
 No hagas auto-correcciones ni escribas frases como "perdón, corrijo el formato".
 No uses backticks ni markdown.
+Completá primero los campos de datos y dejá "speech" para el final.
 Respetá los límites de extensión de tu tarea: una respuesta que se corta a la mitad es una respuesta perdida.
 El campo "speech" siempre es la versión hablada: fluye natural leída en voz alta, sin viñetas, sin asteriscos, sin numeración.`,
   },
 
   // voice: PENDIENTE — no implementar todavía.
-  // {
-  //   usa_formato: false,
-  //   regla: `Respondés hablando. Sin JSON, sin campos, sin viñetas,
-  //           sin numeración. Habla corrida, con la cadencia de alguien
-  //           que le está contando algo a un colega.`,
-  // }
-  // Al tener usa_formato en false, el schema de la tarea no se adjunta
-  // y no hay instrucciones contradictorias. Ningún trigger se toca.
-  // El handler necesitará saltear extractJSON para este canal.
+  // { usa_formato: false, regla: `habla corrida, sin JSON ni estructura` }
+  // Con usa_formato en false el schema de la tarea no se adjunta y no hay
+  // instrucciones contradictorias. Ningún trigger se toca.
 };
 
 function resolverCanal(channel) {
@@ -107,12 +92,17 @@ function resolverCanal(channel) {
 }
 
 // ─── CAPAS DE TAREA ─────────────────────────────────────────────
+// esfuerzo: cuánto piensa el modelo antes de responder.
+//   "low"    · tareas de estructuración: extraer, ordenar, clasificar.
+//   "medium" · tareas donde el criterio de negocio es el producto.
+// maxTokens: techo de PENSAMIENTO + RESPUESTA. Generoso a propósito.
 
 const TRIGGER_DEFAULT = "dashboard_foco_dia";
 
 const CAPAS_TAREA = {
   dashboard_foco_dia: {
-    maxTokens: 1500,
+    maxTokens: 4000,
+    esfuerzo: "medium",
     tarea: `
 ## TU TAREA AHORA
 Mirás toda la cartera del agente y definís el foco del día. Priorizá en este orden: lo más cerca de generar plata, lo que está en riesgo de perderse, y el volumen que falta para sostener el embudo.
@@ -124,8 +114,6 @@ Producís tres cosas:
 
 Si la cartera está vacía, aconsejá cómo construirla.`,
     formato: `
-Completá primero los campos de datos y dejá "speech" para el final.
-
 Formato exacto:
 {"diagnostico":"el diagnóstico","acciones":[{"texto":"la acción","deal_id":"id del deal o null","prioridad":1}],"cierre":"el cierre","speech":"lo mismo dicho en voz alta, máximo 6 frases"}`,
     normalizar: (p) => {
@@ -173,7 +161,8 @@ Formato exacto:
   },
 
   deal_detail: {
-    maxTokens: 1200,
+    maxTokens: 3000,
+    esfuerzo: "medium",
     tarea: `
 ## TU TAREA AHORA
 Te preguntan qué hacer con UN deal puntual. Mirá su etapa, cuánto hace que no hay movimiento, si tiene próximo paso agendado y qué dice su historial. Respondé sobre ESE deal, no sobre la cartera.
@@ -183,8 +172,6 @@ Producís tres cosas:
 - Entre 1 y 4 acciones concretas, una sola frase cada una, con nombre, canal y momento.
 - Un cierre de una frase.`,
     formato: `
-Completá primero los campos de datos y dejá "speech" para el final.
-
 Formato exacto:
 {"diagnostico":"el diagnóstico","acciones":[{"texto":"la acción","deal_id":"id del deal","prioridad":1}],"cierre":"el cierre","speech":"lo mismo dicho en voz alta, máximo 6 frases"}`,
     normalizar: (p, ctx) => CAPAS_TAREA.dashboard_foco_dia.normalizar(p, ctx),
@@ -206,7 +193,8 @@ Formato exacto:
   },
 
   deal_resumen: {
-    maxTokens: 800,
+    maxTokens: 2500,
+    esfuerzo: "medium",
     tarea: `
 ## TU TAREA AHORA
 Escribís el resumen de situación de un deal, para que el agente entienda dónde está parado sin leer todo el historial.
@@ -217,8 +205,6 @@ Producís dos cosas:
 
 No repitas datos que el agente ya ve en pantalla (precio, dirección, etapa). Aportá lectura, no inventario.`,
     formato: `
-Completá primero los campos de datos y dejá "speech" para el final.
-
 Formato exacto:
 {"resumen":"el párrafo","proximo_paso":"la frase","speech":"lo mismo para escuchar"}`,
     normalizar: (p) => {
@@ -237,14 +223,13 @@ Formato exacto:
   },
 
   rex_sugiere: {
-    maxTokens: 400,
+    maxTokens: 1500,
+    esfuerzo: "low",
     tarea: `
 ## TU TAREA AHORA
 Das UNA sugerencia contextual sobre este deal. Una sola, la más útil ahora mismo. Una o dos frases, no más.
 Elegí también qué tipo de acción la resuelve, para que el agente la ejecute de un click. Los tipos posibles son: contacto, tarea, visita, nota, etapa.`,
     formato: `
-Completá primero los campos de datos y dejá "speech" para el final.
-
 Formato exacto:
 {"sugerencia":"una o dos frases","accion":{"texto":"label corto del boton, maximo 4 palabras","tipo":"contacto"},"speech":"lo mismo dicho en voz alta"}`,
     normalizar: (p) => {
@@ -265,7 +250,8 @@ Formato exacto:
   },
 
   criterios_ponderar: {
-    maxTokens: 1200,
+    maxTokens: 3000,
+    esfuerzo: "low",
     tarea: `
 ## TU TAREA AHORA
 El agente te cuenta en texto libre qué busca un cliente comprador. Traducilo a criterios ponderados.
@@ -278,10 +264,8 @@ Producís tres cosas:
 Distinguí lo que el cliente DIJO de lo que el agente INFIERE. Si algo no se dijo, va en "falta_preguntar", no lo inventes como criterio.
 Las razones son cortas: una frase, no un párrafo.`,
     formato: `
-Completá primero los campos de datos y dejá "speech" para el final. El speech no pasa de 5 frases.
-
 Formato exacto:
-{"criterios":[{"nombre":"Zona","peso":9,"razon":"por que ese peso"}],"innegociables":["cochera cubierta"],"falta_preguntar":["forma de pago"],"speech":"resumen hablado de lo anterior, maximo 5 frases"}`,
+{"criterios":[{"nombre":"Zona","peso":9,"razon":"por que ese peso"}],"innegociables":["cochera cubierta"],"falta_preguntar":["forma de pago"],"speech":"resumen hablado, maximo 5 frases"}`,
     normalizar: (p) => {
       if (!Array.isArray(p.criterios)) p.criterios = [];
       p.criterios = p.criterios
@@ -303,7 +287,8 @@ Formato exacto:
   },
 
   feedback_visita: {
-    maxTokens: 700,
+    maxTokens: 2000,
+    esfuerzo: "low",
     tarea: `
 ## TU TAREA AHORA
 El agente te cuenta cómo fue una visita, en texto libre y desordenado. Ordenalo.
@@ -315,8 +300,6 @@ Producís tres cosas:
 
 Si el agente no dice cómo reaccionó el cliente, no lo adivines: devolvé la reacción vacía.`,
     formato: `
-Completá primero los campos de datos y dejá "speech" para el final.
-
 Formato exacto:
 {"reaccion":"gusto","comentario":"lo que dijo el cliente","criterios_mencionados":[{"nombre":"Luminosidad","sentimiento":"positivo"}],"speech":"lo mismo dicho en voz alta"}`,
     normalizar: (p) => {
@@ -336,7 +319,8 @@ Formato exacto:
   },
 
   comparativa_resumen: {
-    maxTokens: 700,
+    maxTokens: 2000,
+    esfuerzo: "low",
     tarea: `
 ## TU TAREA AHORA
 Explicás el resultado de una comparativa de propiedades para que la lea EL CLIENTE COMPRADOR, no el agente.
@@ -348,8 +332,6 @@ Producís dos cosas:
 Nunca menciones puntajes, pesos ni porcentajes: el cliente no ve la ingeniería interna. Hablá de la propiedad, no del método.
 Si alguna falla un innegociable, decilo con claridad y sin rodeos.`,
     formato: `
-Completá primero los campos de datos y dejá "speech" para el final.
-
 Formato exacto:
 {"resumen":"3 a 4 frases","recomendacion":"1 o 2 frases","speech":"lo mismo para escuchar"}`,
     normalizar: (p) => {
@@ -367,7 +349,8 @@ Formato exacto:
   },
 
   recalibrar_criterios: {
-    maxTokens: 800,
+    maxTokens: 2500,
+    esfuerzo: "medium",
     tarea: `
 ## TU TAREA AHORA
 Recibís los criterios ponderados de una búsqueda y las reacciones reales del cliente a las propiedades que visitó. Detectás si los pesos declarados contradicen lo que el cliente decidió.
@@ -378,8 +361,6 @@ Solo señalá una contradicción si los datos la sostienen. Con menos de tres pr
 
 Si la hay, producís: una observación de dos frases dirigida al AGENTE, y los ajustes de peso concretos que proponés.`,
     formato: `
-Completá primero los campos de datos y dejá "speech" para el final.
-
 Formato exacto:
 {"hay_contradiccion":true,"observacion":"dos frases","ajustes":[{"criterio":"Zona","peso_actual":9,"peso_sugerido":5,"razon":"por que"}],"speech":"lo mismo dicho en voz alta"}`,
     normalizar: (p) => {
@@ -398,13 +379,13 @@ Formato exacto:
     }),
   },
 };
+
 function resolverCapa(trigger) {
   if (CAPAS_TAREA[trigger]) return { nombre: trigger, capa: CAPAS_TAREA[trigger] };
   console.warn(`[Rex] Trigger desconocido "${trigger}", usando ${TRIGGER_DEFAULT}`);
   return { nombre: TRIGGER_DEFAULT, capa: CAPAS_TAREA[TRIGGER_DEFAULT] };
 }
 
-// identidad + regla del canal + tarea + (schema solo si el canal lo usa)
 function buildSystemPrompt(capa, canal) {
   const reglaCanal = REGLAS_SALIDA[canal];
   let prompt = REX_BASE + reglaCanal.regla + "\n" + capa.tarea;
@@ -413,30 +394,24 @@ function buildSystemPrompt(capa, canal) {
 }
 
 // ─── MODEL DISCOVERY ────────────────────────────────────────────
-// El modelo se descubre solo y se cachea 24hs, por familia.
-// Nunca hardcodear un nombre de modelo fuera de los fallbacks.
+// Sonnet para estructuración, el mejor disponible donde el criterio
+// de negocio es el producto.
 
-// Familia de modelo por trigger. Los que no figuran usan el mejor
-// disponible (hoy Opus). Sonnet para tareas de estructuración: misma
-// calidad, un tercio del tiempo, mucho menos costo. Opus donde el
-// criterio de negocio es el producto.
 const MODELO_POR_TRIGGER = {
   criterios_ponderar:  "sonnet",
   feedback_visita:     "sonnet",
   comparativa_resumen: "sonnet",
   rex_sugiere:         "sonnet",
-  // dashboard_foco_dia, deal_detail, deal_resumen y
-  // recalibrar_criterios van con el mejor disponible.
 };
 
-const MODEL_CACHE = {};                       // { [familia]: { model, timestamp } }
+const MODEL_CACHE = {};
 const MODEL_CACHE_TTL = 24 * 60 * 60 * 1000;
 const MODEL_FAMILY_RANK = { opus: 3, sonnet: 2, haiku: 1 };
 const MODEL_FALLBACK = {
   mejor:  "claude-opus-4-7",
   opus:   "claude-opus-4-7",
   sonnet: "claude-sonnet-5",
-  haiku:  "claude-haiku-4-5-20251001",
+  haiku:  "claude-haiku-4-5",
 };
 
 function limpiarCacheModelos() {
@@ -480,7 +455,7 @@ async function getBestModel(client, familia) {
 // ─── PROVIDER ABSTRACTION ───────────────────────────────────────
 const anthropicProvider = {
   name: "anthropic",
-  async complete({ systemPrompt, userMessage, maxTokens, familia }) {
+  async complete({ systemPrompt, userMessage, maxTokens, familia, esfuerzo }) {
     const client = new Anthropic({ apiKey: process.env.ANTHROPIC_API_KEY });
     const model = await getBestModel(client, familia);
     const msg = await client.messages.create({
@@ -488,10 +463,13 @@ const anthropicProvider = {
       max_tokens: maxTokens,
       system: systemPrompt,
       messages: [{ role: "user", content: userMessage }],
+      // Regula cuánto piensa antes de responder. Sin esto el modelo
+      // razona al máximo y se come el presupuesto de tokens.
+      output_config: { effort: esfuerzo || "medium" },
     });
     const textBlock = msg.content.find(b => b.type === "text");
     const text = textBlock ? textBlock.text : JSON.stringify(msg.content);
-    return { text, model, provider: "anthropic", stop_reason: msg.stop_reason };
+    return { text, model, provider: "anthropic", stop_reason: msg.stop_reason, usage: msg.usage };
   },
 };
 
@@ -514,9 +492,6 @@ async function callProviders(params) {
 }
 
 // ─── JSON EXTRACTOR ──────────────────────────────────────────────
-// Recupera el JSON aunque venga con texto alrededor. Si la respuesta
-// quedó truncada por max_tokens, cierra las estructuras abiertas para
-// salvar lo que llegó completo.
 function extractJSON(text) {
   if (!text) return null;
   try { return JSON.parse(text.trim()); } catch {}
@@ -556,10 +531,6 @@ function extractJSON(text) {
 }
 
 // ─── HANDLER ────────────────────────────────────────────────────
-// 30s: margen para los triggers que van con el modelo más potente.
-// El timeout del cliente SIEMPRE tiene que ser mayor que este, si no
-// el fallback nunca llega y el agente ve un error en vez de una
-// respuesta degradada.
 const TIMEOUT_MS = 30000;
 
 module.exports = async function handler(req, res) {
@@ -587,18 +558,17 @@ module.exports = async function handler(req, res) {
         systemPrompt: buildSystemPrompt(capa, canal),
         userMessage: JSON.stringify(context),
         maxTokens: capa.maxTokens,
+        esfuerzo: capa.esfuerzo,
         familia,
       }),
       new Promise((_, reject) => setTimeout(() => reject(new Error("TIMEOUT")), TIMEOUT_MS)),
     ]);
 
     if (result.stop_reason === "max_tokens") {
-      console.warn(`[Rex] ${triggerNombre} · truncado por max_tokens (${capa.maxTokens})`);
+      console.warn(`[Rex] ${triggerNombre} · TRUNCADO por max_tokens (${capa.maxTokens}) · salida ${result.usage?.output_tokens} tokens`);
     }
-    console.log(`[Rex] ${triggerNombre}/${canal} · ${result.model} · ${Date.now() - inicio}ms`);
+    console.log(`[Rex] ${triggerNombre}/${canal} · ${result.model} · esfuerzo ${capa.esfuerzo} · ${Date.now() - inicio}ms · ${result.usage?.output_tokens} tokens`);
 
-    // NUNCA devolver texto sin parsear como contenido: si no se puede
-    // parsear, va el fallback de la capa.
     const extraido = extractJSON(result.text);
     if (!extraido) {
       console.error(`[Rex] ${triggerNombre} · no se pudo parsear, usando fallback`);
