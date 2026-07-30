@@ -253,13 +253,19 @@ Formato exacto:
     maxTokens: 3000,
     esfuerzo: "low",
     tarea: `
+    tarea: `
 ## TU TAREA AHORA
 El agente te cuenta en texto libre qué busca un cliente comprador. Traducilo a criterios ponderados.
 
 Producís tres cosas:
 - Una lista de criterios con peso del 1 al 10, cada uno con una razón de UNA frase corta. Entre 4 y 8 criterios.
-- Los innegociables: lo que no puede faltar o sería descarte automático. No llevan peso, son filtros.
+- Los innegociables: lo que no puede faltar o sería descarte automático.
 - Qué falta preguntar: lo que el agente no mencionó y cambia la búsqueda (forma de pago, urgencia, decisores, si necesita vender primero).
+
+REGLA CRÍTICA: cada cosa va en UNA lista sola, nunca en las dos.
+Un innegociable NO lleva peso y NO aparece entre los criterios: es un filtro binario, la propiedad lo cumple o queda descartada.
+Los criterios ponderados sirven para comparar entre propiedades que YA pasaron todos los filtros. Si algo lo cumplen todas las que sobreviven, no discrimina y no debería puntuar.
+Ante la duda, preguntate: ¿el cliente aceptaría esta propiedad si falla en esto pero es excelente en todo lo demás? Si la respuesta es no, es innegociable. Si es sí, es criterio ponderado.
 
 Distinguí lo que el cliente DIJO de lo que el agente INFIERE. Si algo no se dijo, va en "falta_preguntar", no lo inventes como criterio.
 Las razones son cortas: una frase, no un párrafo.`,
