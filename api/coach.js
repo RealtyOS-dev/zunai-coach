@@ -17,8 +17,44 @@
 const Anthropic = require("@anthropic-ai/sdk");
 
 // ─── CAPA BASE ──────────────────────────────────────────────────
+// Los ratios del negocio YA NO VIVEN ACA: llegan en el payload, leidos de
+// la tabla `parametros` del mercado. Mientras estuvieron escritos en este
+// archivo, un agente no podia corregirlos con su experiencia y el valor
+// aprendido no tenia a que reemplazar.
+//
+// Los de abajo son el piso, no la verdad: se usan solo si el cliente no
+// mando nada, y cuando eso pasa queda dicho en _meta.ratios. Un fallback
+// silencioso es la forma mas comun de que un bug viva meses.
 
-const REX_BASE = `Sos Rex, el coach de negocio de Zunai, la plataforma de gestión y coaching para agentes inmobiliarios en LatAm.
+const RATIOS_PISO = {
+  prelistings_por_cierre:        6,
+  tasa_captacion_prelisting:     0.40,
+  recupero_no_captados:          0.20,
+  semana_conexiones_cara_a_cara: 15,
+  semana_contactos_nuevos:       2,
+  semana_prelistings:            3,
+  cartera_en_desarrollo_hasta:   10,
+  cartera_en_crecimiento_hasta:  19,
+  cartera_prospera_desde:        20,
+  cartera_sugerir_equipo:        35,
+  rotacion_cartera_min:          0.10,
+  tasa_servicio_min:             0.15,
+  ticket_se_mide_por:            "valor_propiedad",
+};
+
+const TICKET_SEGUN = {
+  valor_propiedad: "por VALOR de propiedad, no por comision",
+  comision:        "por la COMISION, no por el valor de la propiedad",
+};
+
+const pct = (n) => Math.round(Number(n) * 100);
+
+function rexBase(parametros) {
+  const r = { ...RATIOS_PISO, ...(parametros || {}) };
+  const enCrecimiento = Number(r.cartera_en_desarrollo_hasta) + 1;
+  const ticket = TICKET_SEGUN[r.ticket_se_mide_por] || TICKET_SEGUN.valor_propiedad;
+
+  return `Sos Rex, el coach de negocio de Zunai, la plataforma de gestión y coaching para agentes inmobiliarios en LatAm.
 
 No sos un asistente genérico ni un bot de tareas. Sos un coach, mentor y planificador con criterio real de negocio inmobiliario. Tu magia es ser PROACTIVO e integrado al trabajo del agente: aparecés en el momento justo, con lo pertinente, sin interrumpir de más.
 
@@ -27,14 +63,16 @@ No sos un asistente genérico ni un bot de tareas. Sos un coach, mentor y planif
 Ingeniería inversa de metas: de la meta grande a las acciones concretas de hoy, con números. Meta de ingresos, operaciones necesarias, pre-listings, conexiones y contactos por semana, acciones del día.
 
 Ratios de referencia del negocio:
-- Cada 6 pre-listings o pre-buyings dan 1 cierre.
-- Entre el 30 y el 50% de los pre-listings se captan. Con seguimiento se recupera cerca del 20% de los no captados.
-- Semana sustentable: 15 conexiones cara a cara, 2 contactos nuevos a la red, 3 pre-listings.
-- Cartera: menos de 10 es negocio en desarrollo, entre 11 y 19 en crecimiento, 20 o más próspero. Pasadas unas 35 propiedades, conviene sugerir armar equipo.
-- Rotación de cartera (vendidas sobre cartera) igual o mayor al 10%. Tasa de servicio igual o mayor al 15%.
+- Cada ${r.prelistings_por_cierre} pre-listings o pre-buyings dan 1 cierre.
+- Cerca del ${pct(r.tasa_captacion_prelisting)}% de los pre-listings se captan. Con seguimiento se recupera cerca del ${pct(r.recupero_no_captados)}% de los no captados.
+- Semana sustentable: ${r.semana_conexiones_cara_a_cara} conexiones cara a cara, ${r.semana_contactos_nuevos} contactos nuevos a la red, ${r.semana_prelistings} pre-listings.
+- Cartera: menos de ${r.cartera_en_desarrollo_hasta} es negocio en desarrollo, entre ${enCrecimiento} y ${r.cartera_en_crecimiento_hasta} en crecimiento, ${r.cartera_prospera_desde} o más próspero. Pasadas unas ${r.cartera_sugerir_equipo} propiedades, conviene sugerir armar equipo.
+- Rotación de cartera (vendidas sobre cartera) igual o mayor al ${pct(r.rotacion_cartera_min)}%. Tasa de servicio igual o mayor al ${pct(r.tasa_servicio_min)}%.
 - Conexión cara a cara es cualquier contacto presencial donde se hable del rubro.
 
-Ticket promedio: en Argentina se habla del ticket por VALOR de propiedad, no por comisión.
+Estos números son los de referencia del mercado del agente, no leyes: si su propia experiencia dice otra cosa, la suya manda.
+
+Ticket promedio: se habla del ticket ${ticket}.
 
 ## LAS 3 CLAVES QUE SOSTENÉS SIEMPRE
 1. RESILIENCIA: cada no acerca al sí.
@@ -60,6 +98,7 @@ Nunca desmoralices. Mostrale el camino con calidez, nunca lo hagas sentir mal po
 - Cálido pero directo y concreto. Nada de motivación vacía.
 - Breve. El agente está trabajando, no leyendo.
 - No inventes datos que no tenés.`;
+}
 
 // ─── REGLAS DE SALIDA POR CANAL ─────────────────────────────────
 
@@ -393,9 +432,9 @@ function resolverCapa(trigger) {
   return { nombre: TRIGGER_DEFAULT, capa: CAPAS_TAREA[TRIGGER_DEFAULT] };
 }
 
-function buildSystemPrompt(capa, canal) {
+function buildSystemPrompt(capa, canal, parametros) {
   const reglaCanal = REGLAS_SALIDA[canal];
-  let prompt = REX_BASE + reglaCanal.regla + "\n" + capa.tarea;
+  let prompt = rexBase(parametros) + reglaCanal.regla + "\n" + capa.tarea;
   if (reglaCanal.usa_formato) prompt += "\n" + capa.formato;
   return prompt;
 }
@@ -551,14 +590,23 @@ module.exports = async function handler(req, res) {
   const { nombre: triggerNombre, capa } = resolverCapa(context.trigger);
   const familia = MODELO_POR_TRIGGER[triggerNombre] || null;
 
+  // Los ratios llegan del cliente, que los lee de `parametros`. Si no
+  // vienen, Rex razona con el piso de este archivo — y eso queda dicho en
+  // _meta, no escondido.
+  const parametros = context.parametros || null;
+  const origenRatios = parametros ? "parametros" : "piso";
+  if (!parametros) {
+    console.warn(`[Rex] ${triggerNombre} · sin parametros en el payload, usando el piso del archivo`);
+  }
+
   const responder = (payload, extra = {}) =>
-    res.status(200).json({ ...payload, ...extra, _meta: { ...(extra._meta || {}), trigger: triggerNombre, canal } });
+    res.status(200).json({ ...payload, ...extra, _meta: { ...(extra._meta || {}), trigger: triggerNombre, canal, ratios: origenRatios } });
 
   try {
     const inicio = Date.now();
     const result = await Promise.race([
       callProviders({
-        systemPrompt: buildSystemPrompt(capa, canal),
+        systemPrompt: buildSystemPrompt(capa, canal, parametros),
         userMessage: JSON.stringify(context),
         maxTokens: capa.maxTokens,
         esfuerzo: capa.esfuerzo,
