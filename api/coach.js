@@ -292,7 +292,13 @@ Formato exacto:
 
   criterios_ponderar: {
     maxTokens: 4000,
-    esfuerzo: "medium",
+    // esfuerzo low a proposito: la tarea tiene las reglas escritas de forma
+    // explicita, asi que no deberia necesitar razonar mucho. Con medium
+    // tardaba mas de 30s y caia al fallback — y en el 5 el pensamiento
+    // comparte el presupuesto de max_tokens, asi que ademas arriesga
+    // truncado. Si la clasificacion sale mal con low, el problema es la
+    // tarea, no el esfuerzo.
+    esfuerzo: "low",
     tarea: `
 ## TU TAREA AHORA
 El agente te cuenta en texto libre qué busca un cliente comprador. Traducilo a algo que Zunai pueda PUNTUAR y —mañana— BUSCAR.
