@@ -291,50 +291,103 @@ Formato exacto:
   },
 
   criterios_ponderar: {
-    maxTokens: 3000,
-    esfuerzo: "low",
+    maxTokens: 4000,
+    esfuerzo: "medium",
     tarea: `
 ## TU TAREA AHORA
-El agente te cuenta en texto libre qué busca un cliente comprador. Traducilo a criterios ponderados e innegociables.
+El agente te cuenta en texto libre qué busca un cliente comprador. Traducilo a algo que Zunai pueda PUNTUAR y —mañana— BUSCAR.
 
-Producís tres cosas:
-- CRITERIOS: entre 3 y 8, con peso del 1 al 10 y una razón de UNA frase corta. Sirven para ORDENAR entre propiedades que ya pasaron todos los filtros.
-- INNEGOCIABLES: filtros binarios. Cada uno DESCARTA propiedades. También con su razón de una frase.
-- QUÉ FALTA PREGUNTAR: lo que el agente no mencionó y cambia la búsqueda (forma de pago, urgencia, decisores, si necesita vender primero).
+Eso último cambia todo: no alcanza con describir. "Luminoso, peso 8" puntúa pero no busca. "Ambientes, piso, 2" hace las dos cosas. Guardá el valor de forma consultable siempre que se pueda.
 
-## CÓMO SE DISTINGUEN
-El test es uno solo: ¿el cliente aceptaría esta propiedad si falla en esto pero es excelente en todo lo demás?
-- Si la respuesta es NO, es innegociable.
-- Si es SÍ, es criterio ponderado.
+## LAS CUATRO CATEGORÍAS
 
-Cada cosa va en UNA lista sola. Un innegociable no lleva peso y no aparece entre los criterios.
+### CONTEXTO — describe al cliente, no puntúa
+Pareja joven, primer departamento, trabaja desde casa, tiene un perro grande, quiere mudarse pronto, no necesita vender.
+No es atributo del inmueble: ninguna propiedad lo cumple o lo incumple.
+También va acá un descriptor categórico dicho al pasar, sin "o" y sin marcador de absoluto: "monoambiente", "algo para reciclar".
+Se devuelve como UN texto corrido, no como lista.
 
-## CUÁNDO ES INNEGOCIABLE, SIN DUDAR
-Estas formas del castellano marcan un absoluto y se toman al pie de la letra:
-"sí o sí" · "tiene que" · "no puede faltar" · "indispensable" · "imprescindible" · "sin eso no" · "descarto si no tiene" · "obligatorio" · "es condición"
+### LISTA — cuando el cliente dice "o"
+"Almagro o Boedo". "Dos ambientes o uno grande". LA MARCA ES LA CONJUNCIÓN.
+Guardá los valores en el campo valores. Fuera de la lista puntúa cero, pero NO descarta.
+Y ojo: en "dos ambientes o uno grande" lo que decide no es la cantidad — un monoambiente grande y uno chico no valen lo mismo. Ahí agregá además un criterio de superficie con un piso inferido, aunque el cliente no lo diga.
 
-## LAS RESTRICCIONES NEGATIVAS TAMBIÉN SON INNEGOCIABLES
-"nada de X", "que no sea X", "no quiero X", "ni loco X" son innegociables expresados como exclusión. No los descartes por no ser algo que el cliente "busca": son igual de vinculantes que lo que pide.
+### MAGNITUD — cuando es un número solo
+"Dos ambientes". "Hasta 175 mil". "No más de 30 años".
+No se cumple o se incumple: tiene dirección. Un tres ambientes al mismo precio no es "no cumple", es mejor en esa dimensión.
+  piso     = más es mejor
+  techo    = menos es mejor
+  objetivo = acercarse en las dos direcciones
+LA DIRECCIÓN LA DECIDE EL CLIENTE, NO EL ATRIBUTO. La antigüedad suele ser techo, pero si busca algo de más de 40 años es piso. No hay lista fija: leelo de lo que dijo.
+Guardá direccion, valor_referencia y unidad.
 
-Un innegociable perdido no produce una lista más corta: produce propiedades imposibles mostradas como si sirvieran. El agente lleva al cliente a ver algo donde no puede entrar.
+### INNEGOCIABLE — sólo con marcador explícito
+"Sí o sí", "tiene que", "nada de", "indispensable", "imprescindible", "descarto", "es condición", "sin eso no".
+SIN MARCADOR, NO SUBE.
+Las restricciones negativas también son innegociables: "nada de X", "que no sea X", "no quiero X". No las descartes por no ser algo que el cliente busca — son igual de vinculantes.
+Un innegociable perdido no produce una lista más corta: produce propiedades imposibles mostradas como si sirvieran.
 
-## CUANDO UN INNEGOCIABLE TE HACE RUIDO, DECILO
-Si un absoluto del cliente choca con algo de su propia situación, marcalo con a_confirmar en true y explicá el choque en la razón. NO lo saques de la lista ni lo bajes a criterio: el cliente lo dijo y se respeta. Pero el agente tiene que volver a preguntarlo.
+## SI UN INNEGOCIABLE TE HACE RUIDO, DECILO
+Si un absoluto del cliente choca con algo de su propia situación, marcalo con a_confirmar en true y explicá el choque en la razón. NO lo saques ni lo bajes a criterio: el cliente lo dijo y se respeta. Pero el agente tiene que volver a preguntarlo.
+Ejemplo: "nada de planta baja" dicho por alguien con un perro grande. Con perro la planta baja suele ser deseable — o puede ser por seguridad. No lo resuelvas vos.
 
-Ejemplo: "nada de planta baja" dicho por alguien con un perro grande. Con perro la planta baja suele ser deseable, así que puede ser una preferencia mal expresada — o puede ser por seguridad. No lo resuelvas vos: marcalo y que el agente lo confirme.
+## A QUÉ DATO CORRESPONDE (atributo)
+Si el criterio se puede medir contra un campo de la propiedad, nombralo. Los campos son exactamente estos:
+tipologia · nivel_1 · nivel_2 · nivel_3 · superficie_total · superficie_cubierta · ambientes · dormitorios · banos · cocheras · antiguedad_anios · pisos_edificio · piso · posicion · orientacion · amenities · estado_ocupacion · precio
+Si no corresponde a ninguno, dejá atributo en null. "Luminosidad" no tiene campo: es null.
 
-Distinguí lo que el cliente DIJO de lo que vos INFERÍS. Si algo no se dijo, va en falta_preguntar, no lo inventes como criterio.
-Las razones son cortas: una frase, no un párrafo.`,
+## SE PUEDE FILTRAR CON ESO (filtrable)
+Distinta pregunta, y no se deriva de la anterior. filtrable es si se puede CONFIAR en ese dato para filtrar una búsqueda en portales.
+  filtrable true:  zona, precio, ambientes, superficie, antigüedad, cocheras, tipología
+  filtrable false: apto mascotas, cocina separada, orientación real, estado real, luminosidad, lo que permite el consorcio
+El caso que lo explica: apto mascotas mapea a amenities, que es un campo real, y aun así NO es filtrable — la mayoría de las publicaciones no lo declara, y no porque no acepten sino porque no lo dice. Filtrar por eso descartaría casi todo el inventario, y mal.
+
+## QUÉ FALTA PREGUNTAR
+Lo que el agente no mencionó y cambia la búsqueda. Si algo YA está en el texto, no lo pidas: quedás como que no leíste.
+
+## REGLAS FINALES
+Cada cosa va en UNA sola lista. Un innegociable no lleva peso ni aparece entre los criterios.
+Distinguí lo que el cliente DIJO de lo que vos INFERÍS. Lo inferido se marca con inferido en true.
+Las razones son de una frase. Entre 3 y 8 criterios.`,
     formato: `
 Formato exacto:
-{"criterios":[{"nombre":"Luminosidad","peso":7,"razon":"por que ese peso"}],"innegociables":[{"nombre":"apto mascotas","razon":"tienen un perro grande","a_confirmar":false}],"falta_preguntar":["forma de pago"],"speech":"resumen hablado, maximo 5 frases"}`,
+{"contexto":"texto corrido sobre quien es el cliente","criterios":[{"nombre":"Zona","categoria":"lista","peso":6,"valores":["Almagro","Boedo"],"direccion":null,"valor_referencia":null,"unidad":null,"atributo":"nivel_3","filtrable":true,"inferido":false,"razon":"una frase"}],"innegociables":[{"nombre":"Acepta mascotas","razon":"una frase","a_confirmar":false,"filtrable":false}],"falta_preguntar":["forma de pago"],"speech":"resumen hablado, maximo 5 frases"}`,
     normalizar: (p) => {
+      const CATS = ["ponderado", "lista", "magnitud"];
+      const DIRS = ["piso", "techo", "objetivo"];
+      const num  = (v) => (v === null || v === undefined || v === "" ? null : Number(v));
+
+      if (typeof p.contexto !== "string") p.contexto = "";
+
       if (!Array.isArray(p.criterios)) p.criterios = [];
       p.criterios = p.criterios
         .filter(c => c && c.nombre)
-        .map(c => ({ ...c, peso: Math.min(10, Math.max(1, Number(c.peso) || 5)) }));
+        .map(c => {
+          const cat = CATS.includes(c.categoria) ? c.categoria : "ponderado";
+          const dir = DIRS.includes(c.direccion) ? c.direccion : null;
+          return {
+            nombre: c.nombre,
+            categoria: cat,
+            peso: Math.min(10, Math.max(1, Number(c.peso) || 5)),
+            // Cada categoria conserva SOLO lo suyo: un ponderado con
+            // direccion o una magnitud con valores serian datos que despues
+            // nadie sabe si aplican.
+            valores: cat === "lista" && Array.isArray(c.valores) ? c.valores : null,
+            direccion: cat === "magnitud" ? dir : null,
+            valor_referencia: cat === "magnitud" ? num(c.valor_referencia) : null,
+            unidad: cat === "magnitud" ? (c.unidad || null) : null,
+            atributo: c.atributo || null,
+            filtrable: c.filtrable === true,
+            inferido: c.inferido !== false,
+            razon: c.razon || null,
+          };
+        })
+        // Una magnitud sin direccion o sin valor no se puede puntuar: baja a
+        // ponderado en vez de quedar rota.
+        .map(c => (c.categoria === "magnitud" && (!c.direccion || c.valor_referencia === null)
+                   ? { ...c, categoria: "ponderado", direccion: null, valor_referencia: null, unidad: null }
+                   : c));
 
-      // Tolera la forma vieja, donde los innegociables eran texto suelto.
       if (!Array.isArray(p.innegociables)) p.innegociables = [];
       p.innegociables = p.innegociables
         .map(i => (typeof i === "string" ? { nombre: i } : i))
@@ -343,6 +396,7 @@ Formato exacto:
           nombre: i.nombre,
           razon: i.razon || null,
           a_confirmar: i.a_confirmar === true,
+          filtrable: i.filtrable === true,
         }));
 
       if (!Array.isArray(p.falta_preguntar)) p.falta_preguntar = [];
@@ -353,6 +407,7 @@ Formato exacto:
     },
     fallback: () => ({
       speech: "No pude conectarme. Cargá los criterios a mano y después los ajustamos.",
+      contexto: "",
       criterios: [],
       innegociables: [],
       falta_preguntar: ["Presupuesto real", "Forma de pago", "Urgencia", "Quiénes deciden"],
