@@ -295,29 +295,56 @@ Formato exacto:
     esfuerzo: "low",
     tarea: `
 ## TU TAREA AHORA
-El agente te cuenta en texto libre qué busca un cliente comprador. Traducilo a criterios ponderados.
+El agente te cuenta en texto libre qué busca un cliente comprador. Traducilo a criterios ponderados e innegociables.
 
 Producís tres cosas:
-- Una lista de criterios con peso del 1 al 10, cada uno con una razón de UNA frase corta. Entre 3 y 8 criterios.
-- Los innegociables: lo que no puede faltar o sería descarte automático.
-- Qué falta preguntar: lo que el agente no mencionó y cambia la búsqueda (forma de pago, urgencia, decisores, si necesita vender primero).
+- CRITERIOS: entre 3 y 8, con peso del 1 al 10 y una razón de UNA frase corta. Sirven para ORDENAR entre propiedades que ya pasaron todos los filtros.
+- INNEGOCIABLES: filtros binarios. Cada uno DESCARTA propiedades. También con su razón de una frase.
+- QUÉ FALTA PREGUNTAR: lo que el agente no mencionó y cambia la búsqueda (forma de pago, urgencia, decisores, si necesita vender primero).
 
-REGLA CRÍTICA: cada cosa va en UNA lista sola, nunca en las dos.
-Un innegociable NO lleva peso y NO aparece entre los criterios: es un filtro binario, la propiedad lo cumple o queda descartada.
-Los criterios ponderados sirven para comparar entre propiedades que YA pasaron todos los filtros. Si algo lo cumplen todas las que sobreviven, no discrimina y no debería puntuar.
-Ante la duda preguntate: el cliente aceptaría esta propiedad si falla en esto pero es excelente en todo lo demás? Si la respuesta es no, es innegociable. Si es sí, es criterio ponderado.
+## CÓMO SE DISTINGUEN
+El test es uno solo: ¿el cliente aceptaría esta propiedad si falla en esto pero es excelente en todo lo demás?
+- Si la respuesta es NO, es innegociable.
+- Si es SÍ, es criterio ponderado.
 
-Distinguí lo que el cliente DIJO de lo que el agente INFIERE. Si algo no se dijo, va en "falta_preguntar", no lo inventes como criterio.
+Cada cosa va en UNA lista sola. Un innegociable no lleva peso y no aparece entre los criterios.
+
+## CUÁNDO ES INNEGOCIABLE, SIN DUDAR
+Estas formas del castellano marcan un absoluto y se toman al pie de la letra:
+"sí o sí" · "tiene que" · "no puede faltar" · "indispensable" · "imprescindible" · "sin eso no" · "descarto si no tiene" · "obligatorio" · "es condición"
+
+## LAS RESTRICCIONES NEGATIVAS TAMBIÉN SON INNEGOCIABLES
+"nada de X", "que no sea X", "no quiero X", "ni loco X" son innegociables expresados como exclusión. No los descartes por no ser algo que el cliente "busca": son igual de vinculantes que lo que pide.
+
+Un innegociable perdido no produce una lista más corta: produce propiedades imposibles mostradas como si sirvieran. El agente lleva al cliente a ver algo donde no puede entrar.
+
+## CUANDO UN INNEGOCIABLE TE HACE RUIDO, DECILO
+Si un absoluto del cliente choca con algo de su propia situación, marcalo con a_confirmar en true y explicá el choque en la razón. NO lo saques de la lista ni lo bajes a criterio: el cliente lo dijo y se respeta. Pero el agente tiene que volver a preguntarlo.
+
+Ejemplo: "nada de planta baja" dicho por alguien con un perro grande. Con perro la planta baja suele ser deseable, así que puede ser una preferencia mal expresada — o puede ser por seguridad. No lo resuelvas vos: marcalo y que el agente lo confirme.
+
+Distinguí lo que el cliente DIJO de lo que vos INFERÍS. Si algo no se dijo, va en falta_preguntar, no lo inventes como criterio.
 Las razones son cortas: una frase, no un párrafo.`,
     formato: `
 Formato exacto:
-{"criterios":[{"nombre":"Luminosidad","peso":7,"razon":"por que ese peso"}],"innegociables":["cochera cubierta"],"falta_preguntar":["forma de pago"],"speech":"resumen hablado, maximo 5 frases"}`,
+{"criterios":[{"nombre":"Luminosidad","peso":7,"razon":"por que ese peso"}],"innegociables":[{"nombre":"apto mascotas","razon":"tienen un perro grande","a_confirmar":false}],"falta_preguntar":["forma de pago"],"speech":"resumen hablado, maximo 5 frases"}`,
     normalizar: (p) => {
       if (!Array.isArray(p.criterios)) p.criterios = [];
       p.criterios = p.criterios
         .filter(c => c && c.nombre)
         .map(c => ({ ...c, peso: Math.min(10, Math.max(1, Number(c.peso) || 5)) }));
+
+      // Tolera la forma vieja, donde los innegociables eran texto suelto.
       if (!Array.isArray(p.innegociables)) p.innegociables = [];
+      p.innegociables = p.innegociables
+        .map(i => (typeof i === "string" ? { nombre: i } : i))
+        .filter(i => i && i.nombre)
+        .map(i => ({
+          nombre: i.nombre,
+          razon: i.razon || null,
+          a_confirmar: i.a_confirmar === true,
+        }));
+
       if (!Array.isArray(p.falta_preguntar)) p.falta_preguntar = [];
       if (!p.speech) {
         p.speech = `Te propongo ${p.criterios.length} criterios y ${p.innegociables.length} innegociables.`;
