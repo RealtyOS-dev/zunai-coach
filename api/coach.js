@@ -319,13 +319,20 @@ Guardá los valores en el campo valores. Fuera de la lista puntúa cero, pero NO
 Y ojo: en "dos ambientes o uno grande" lo que decide no es la cantidad — un monoambiente grande y uno chico no valen lo mismo. Ahí agregá además un criterio de superficie con un piso inferido, aunque el cliente no lo diga.
 
 ### MAGNITUD — cuando es un número solo
-"Dos ambientes". "Hasta 175 mil". "No más de 30 años".
+"Dos ambientes". "Expensas hasta 80 mil". "No más de 30 años".
 No se cumple o se incumple: tiene dirección. Un tres ambientes al mismo precio no es "no cumple", es mejor en esa dimensión.
   piso     = más es mejor
   techo    = menos es mejor
   objetivo = acercarse en las dos direcciones
 LA DIRECCIÓN LA DECIDE EL CLIENTE, NO EL ATRIBUTO. La antigüedad suele ser techo, pero si busca algo de más de 40 años es piso. No hay lista fija: leelo de lo que dijo.
-Guardá direccion, valor_referencia y unidad.
+Guardá direccion, valor_referencia y unidad. Si el número es plata, guardá también moneda ("USD", "ARS").
+
+## EL PRESUPUESTO NO ES UN CRITERIO — VA APARTE
+NO pongas el presupuesto entre los criterios. Ni "Presupuesto", ni "Precio", ni "Precio máximo", ni nada que mida cuánta plata tiene el cliente. Va en el campo presupuesto, arriba, y en ningún otro lado.
+Por qué es distinto de todos los demás: es el único que DESCARTA por encima. Una propiedad más cara no puntúa bajo — queda afuera, porque no hay plata. Ningún otro criterio hace eso.
+En presupuesto van: importe (número solo, sin puntos), moneda, y peso de 1 a 10 — cuánto le importa el precio ENTRE las que ya entran. Si dijo "hasta 175 mil pero si es la indicada estiramos", el peso es bajo. Si dijo "ni un peso más", es alto.
+Si el texto no menciona plata, mandá presupuesto en null y pedilo en falta_preguntar.
+Ojo: las expensas, los gastos o un tope de reserva SÍ son criterios normales — con moneda. El presupuesto es sólo lo que el cliente puede pagar por la propiedad.
 
 ### INNEGOCIABLE — sólo con marcador explícito
 "Sí o sí", "tiene que", "nada de", "indispensable", "imprescindible", "descarto", "es condición", "sin eso no".
@@ -347,9 +354,11 @@ Distinta pregunta, y no se deriva de la anterior. filtrable es si se puede CONFI
   filtrable true:  zona, precio, ambientes, superficie, antigüedad, cocheras, tipología
   filtrable false: apto mascotas, cocina separada, orientación real, estado real, luminosidad, lo que permite el consorcio
 El caso que lo explica: apto mascotas mapea a amenities, que es un campo real, y aun así NO es filtrable — la mayoría de las publicaciones no lo declara, y no porque no acepten sino porque no lo dice. Filtrar por eso descartaría casi todo el inventario, y mal.
+FILTRABLE NO CAMBIA EL PESO. Son dos preguntas independientes: una es cuánto le importa al cliente, la otra es si el dato se puede consultar. Lo que no se puede filtrar suele ser justo lo que más decide una compra — luminosidad, distribución, estado real. Si le bajás el peso a algo por no ser filtrable, hacés que el score deje de representar lo que el cliente pidió.
 
 ## QUÉ FALTA PREGUNTAR
 Lo que el agente no mencionó y cambia la búsqueda. Si algo YA está en el texto, no lo pidas: quedás como que no leíste.
+Antes de poner cada ítem, buscalo en el texto. "Forma de pago" con el texto diciendo "175 mil en efectivo" es exactamente el error: efectivo ES la forma de pago. Si querés precisar algo que ya está dicho a medias, preguntá lo que falta —"si son 175 mil en efectivo, ¿hay algo de crédito además?"— no lo que ya te dijeron.
 
 ## REGLAS FINALES
 Cada cosa va en UNA sola lista. Un innegociable no lleva peso ni aparece entre los criterios.
@@ -357,15 +366,49 @@ Distinguí lo que el cliente DIJO de lo que vos INFERÍS. Lo inferido se marca c
 Las razones son de una frase. Entre 3 y 8 criterios.`,
     formato: `
 Formato exacto:
-{"contexto":"texto corrido sobre quien es el cliente","criterios":[{"nombre":"Zona","categoria":"lista","peso":6,"valores":["Almagro","Boedo"],"direccion":null,"valor_referencia":null,"unidad":null,"atributo":"nivel_3","filtrable":true,"inferido":false,"razon":"una frase"}],"innegociables":[{"nombre":"Acepta mascotas","razon":"una frase","a_confirmar":false,"filtrable":false}],"falta_preguntar":["forma de pago"],"speech":"resumen hablado, maximo 5 frases"}`,
+{"contexto":"texto corrido sobre quien es el cliente","presupuesto":{"importe":175000,"moneda":"USD","peso":8},"criterios":[{"nombre":"Zona","categoria":"lista","peso":6,"valores":["Almagro","Boedo"],"direccion":null,"valor_referencia":null,"unidad":null,"moneda":null,"atributo":"nivel_3","filtrable":true,"inferido":false,"razon":"una frase"}],"innegociables":[{"nombre":"Acepta mascotas","razon":"una frase","a_confirmar":false,"filtrable":false}],"falta_preguntar":["forma de pago"],"speech":"resumen hablado, maximo 5 frases"}`,
     normalizar: (p) => {
       const CATS = ["ponderado", "lista", "magnitud"];
       const DIRS = ["piso", "techo", "objetivo"];
       const num  = (v) => (v === null || v === undefined || v === "" ? null : Number(v));
 
+      const ajustes = [];
+
       if (typeof p.contexto !== "string") p.contexto = "";
 
+      // El presupuesto vive en la busqueda, no en los criterios: es el
+      // unico que descarta por encima, y ya tiene sus cinco columnas.
+      p.presupuesto = p.presupuesto && num(p.presupuesto.importe) !== null
+        ? {
+            importe: num(p.presupuesto.importe),
+            moneda: p.presupuesto.moneda || null,
+            peso: Math.min(10, Math.max(1, Number(p.presupuesto.peso) || 8)),
+          }
+        : null;
+
       if (!Array.isArray(p.criterios)) p.criterios = [];
+
+      // Red de seguridad: si igual lo emitio como criterio, se saca de la
+      // lista y —si no vino arriba— se promueve. Guardarlo en los dos
+      // lados serian dos numeros que divergen.
+      p.criterios = p.criterios.filter(c => {
+        if (!c) return false;
+        const esPresupuesto = c.atributo === "precio" ||
+          /^\s*(presupuesto|precio\s*(m[aá]x|tope|l[ií]mite))/i.test(c.nombre || "");
+        if (!esPresupuesto) return true;
+        if (!p.presupuesto && num(c.valor_referencia) !== null) {
+          p.presupuesto = {
+            importe: num(c.valor_referencia),
+            moneda: c.moneda || c.unidad || null,
+            peso: Math.min(10, Math.max(1, Number(c.peso) || 8)),
+          };
+          ajustes.push(`presupuesto rescatado del criterio "${c.nombre}"`);
+        } else {
+          ajustes.push(`criterio de presupuesto descartado: "${c.nombre}"`);
+        }
+        return false;
+      });
+
       p.criterios = p.criterios
         .filter(c => c && c.nombre)
         .map(c => {
@@ -382,6 +425,7 @@ Formato exacto:
             direccion: cat === "magnitud" ? dir : null,
             valor_referencia: cat === "magnitud" ? num(c.valor_referencia) : null,
             unidad: cat === "magnitud" ? (c.unidad || null) : null,
+            moneda: cat === "magnitud" ? (c.moneda || null) : null,
             atributo: c.atributo || null,
             filtrable: c.filtrable === true,
             inferido: c.inferido !== false,
@@ -391,7 +435,8 @@ Formato exacto:
         // Una magnitud sin direccion o sin valor no se puede puntuar: baja a
         // ponderado en vez de quedar rota.
         .map(c => (c.categoria === "magnitud" && (!c.direccion || c.valor_referencia === null)
-                   ? { ...c, categoria: "ponderado", direccion: null, valor_referencia: null, unidad: null }
+                   ? { ...c, categoria: "ponderado", direccion: null,
+                       valor_referencia: null, unidad: null, moneda: null }
                    : c));
 
       if (!Array.isArray(p.innegociables)) p.innegociables = [];
@@ -408,6 +453,12 @@ Formato exacto:
       if (!Array.isArray(p.falta_preguntar)) p.falta_preguntar = [];
       if (!p.speech) {
         p.speech = `Te propongo ${p.criterios.length} criterios y ${p.innegociables.length} innegociables.`;
+      }
+      // Un rescate callado sigue siendo callado. Si el normalizador tuvo
+      // que corregir al modelo, que se vea en el log y en la respuesta.
+      if (ajustes.length) {
+        console.warn(`[Rex] criterios_ponderar ajustado: ${ajustes.join(" · ")}`);
+        p._ajustes = ajustes;
       }
       return p;
     },
