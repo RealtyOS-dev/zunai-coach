@@ -326,6 +326,7 @@ No se cumple o se incumple: tiene dirección. Un tres ambientes al mismo precio 
   objetivo = acercarse en las dos direcciones
 LA DIRECCIÓN LA DECIDE EL CLIENTE, NO EL ATRIBUTO. La antigüedad suele ser techo, pero si busca algo de más de 40 años es piso. No hay lista fija: leelo de lo que dijo.
 Guardá direccion, valor_referencia y unidad. Si el número es plata, guardá también moneda ("USD", "ARS").
+SÓLO ES MAGNITUD LO QUE CORRESPONDE A UN CAMPO REAL de la lista de atributos de abajo. Si el número no vive en ningún campo, no hay magnitud posible: es ponderado, por fuerte que suene. El error que no se repite: "Luminosidad, piso 8, escala" — una escala inventada que ninguna propiedad declara. "Bien luminoso" es ponderado con atributo null, siempre.
 
 ## EL PRESUPUESTO NO ES UN CRITERIO — VA APARTE
 NO pongas el presupuesto entre los criterios. Ni "Presupuesto", ni "Precio", ni "Precio máximo", ni nada que mida cuánta plata tiene el cliente. Va en el campo presupuesto, arriba, y en ningún otro lado.
@@ -340,21 +341,20 @@ SIN MARCADOR, NO SUBE.
 Las restricciones negativas también son innegociables: "nada de X", "que no sea X", "no quiero X". No las descartes por no ser algo que el cliente busca — son igual de vinculantes.
 Un innegociable perdido no produce una lista más corta: produce propiedades imposibles mostradas como si sirvieran.
 
+## UN INNEGOCIABLE NO SE REPITE COMO CRITERIO
+La misma frase del cliente va a UNA lista, nunca a las dos. El error que no se repite: "nada de planta baja" como innegociable Y ADEMÁS un criterio "Piso, magnitud, piso 1". Eso cuenta dos veces, e inventa que más alto es mejor cuando el cliente sólo dijo que la planta baja no. Si el cliente ADEMÁS hubiera dicho que prefiere pisos altos, eso sí sería otro criterio — pero tiene que haberlo dicho él, no vos.
+
 ## SI UN INNEGOCIABLE TE HACE RUIDO, DECILO
 Si un absoluto del cliente choca con algo de su propia situación, marcalo con a_confirmar en true y explicá el choque en la razón. NO lo saques ni lo bajes a criterio: el cliente lo dijo y se respeta. Pero el agente tiene que volver a preguntarlo.
 Ejemplo: "nada de planta baja" dicho por alguien con un perro grande. Con perro la planta baja suele ser deseable — o puede ser por seguridad. No lo resuelvas vos.
 
 ## A QUÉ DATO CORRESPONDE (atributo)
-Si el criterio se puede medir contra un campo de la propiedad, nombralo. Los campos son exactamente estos:
+Si el criterio se puede medir contra un campo de la propiedad, nombralo. Los campos son exactamente estos y ningún otro:
 tipologia · nivel_1 · nivel_2 · nivel_3 · superficie_total · superficie_cubierta · ambientes · dormitorios · banos · cocheras · antiguedad_anios · pisos_edificio · piso · posicion · orientacion · amenities · estado_ocupacion · precio
-Si no corresponde a ninguno, dejá atributo en null. "Luminosidad" no tiene campo: es null.
-
-## SE PUEDE FILTRAR CON ESO (filtrable)
-Distinta pregunta, y no se deriva de la anterior. filtrable es si se puede CONFIAR en ese dato para filtrar una búsqueda en portales.
-  filtrable true:  zona, precio, ambientes, superficie, antigüedad, cocheras, tipología
-  filtrable false: apto mascotas, cocina separada, orientación real, estado real, luminosidad, lo que permite el consorcio
-El caso que lo explica: apto mascotas mapea a amenities, que es un campo real, y aun así NO es filtrable — la mayoría de las publicaciones no lo declara, y no porque no acepten sino porque no lo dice. Filtrar por eso descartaría casi todo el inventario, y mal.
-FILTRABLE NO CAMBIA EL PESO. Son dos preguntas independientes: una es cuánto le importa al cliente, la otra es si el dato se puede consultar. Lo que no se puede filtrar suele ser justo lo que más decide una compra — luminosidad, distribución, estado real. Si le bajás el peso a algo por no ser filtrable, hacés que el score deje de representar lo que el cliente pidió.
+Si no corresponde a ninguno, atributo es null. "Luminosidad" no tiene campo: es null.
+LOS INNEGOCIABLES TAMBIÉN LLEVAN ATRIBUTO, con la misma lista: "nada de planta baja" es atributo piso, "acepta mascotas" es atributo amenities.
+SI SE PUEDE FILTRAR CON ESO NO LO DECIDÍS VOS. Es un hecho de los portales, no una opinión: vive en un catálogo, por atributo, y el sistema lo deriva solo. Tu única tarea es el mapeo — qué atributo, o ninguno.
+Y EL ATRIBUTO NO CAMBIA EL PESO. Que un criterio no tenga campo no lo hace menos importante: lo que no se puede consultar suele ser justo lo que más decide una compra. El peso mide al cliente, no a los portales.
 
 ## QUÉ FALTA PREGUNTAR
 Lo que el agente no mencionó y cambia la búsqueda. Si algo YA está en el texto, no lo pidas: quedás como que no leíste.
@@ -366,10 +366,21 @@ Distinguí lo que el cliente DIJO de lo que vos INFERÍS. Lo inferido se marca c
 Las razones son de una frase. Entre 3 y 8 criterios.`,
     formato: `
 Formato exacto:
-{"contexto":"texto corrido sobre quien es el cliente","presupuesto":{"importe":175000,"moneda":"USD","peso":8},"criterios":[{"nombre":"Zona","categoria":"lista","peso":6,"valores":["Almagro","Boedo"],"direccion":null,"valor_referencia":null,"unidad":null,"moneda":null,"atributo":"nivel_3","filtrable":true,"inferido":false,"razon":"una frase"}],"innegociables":[{"nombre":"Acepta mascotas","razon":"una frase","a_confirmar":false,"filtrable":false}],"falta_preguntar":["forma de pago"],"speech":"resumen hablado, maximo 5 frases"}`,
+{"contexto":"texto corrido sobre quien es el cliente","presupuesto":{"importe":175000,"moneda":"USD","peso":8},"criterios":[{"nombre":"Zona","categoria":"lista","peso":6,"valores":["Almagro","Boedo"],"direccion":null,"valor_referencia":null,"unidad":null,"moneda":null,"atributo":"nivel_3","inferido":false,"razon":"una frase"}],"innegociables":[{"nombre":"Acepta mascotas","razon":"una frase","a_confirmar":false,"atributo":"amenities"}],"falta_preguntar":["forma de pago"],"speech":"resumen hablado, maximo 5 frases"}`,
     normalizar: (p) => {
       const CATS = ["ponderado", "lista", "magnitud"];
       const DIRS = ["piso", "techo", "objetivo"];
+      // La misma lista que el catalogo atributo_propiedad de la base. Un
+      // atributo fuera de esta lista no filtra nunca —la busqueda se arma
+      // con un join contra el catalogo—, pero anularlo aca lo hace
+      // visible en vez de dejarlo morir callado en el join.
+      const ATRIBUTOS = [
+        "tipologia", "nivel_1", "nivel_2", "nivel_3",
+        "superficie_total", "superficie_cubierta", "ambientes",
+        "dormitorios", "banos", "cocheras", "antiguedad_anios",
+        "pisos_edificio", "piso", "posicion", "orientacion",
+        "amenities", "estado_ocupacion", "precio",
+      ];
       const num  = (v) => (v === null || v === undefined || v === "" ? null : Number(v));
 
       const ajustes = [];
@@ -414,6 +425,9 @@ Formato exacto:
         .map(c => {
           const cat = CATS.includes(c.categoria) ? c.categoria : "ponderado";
           const dir = DIRS.includes(c.direccion) ? c.direccion : null;
+          if (c.atributo && !ATRIBUTOS.includes(c.atributo)) {
+            ajustes.push(`atributo inventado anulado: "${c.atributo}" en "${c.nombre}"`);
+          }
           return {
             nombre: c.nombre,
             categoria: cat,
@@ -426,29 +440,38 @@ Formato exacto:
             valor_referencia: cat === "magnitud" ? num(c.valor_referencia) : null,
             unidad: cat === "magnitud" ? (c.unidad || null) : null,
             moneda: cat === "magnitud" ? (c.moneda || null) : null,
-            atributo: c.atributo || null,
-            filtrable: c.filtrable === true,
+            atributo: ATRIBUTOS.includes(c.atributo) ? c.atributo : null,
             inferido: c.inferido !== false,
             razon: c.razon || null,
           };
         })
-        // Una magnitud sin direccion o sin valor no se puede puntuar: baja a
-        // ponderado en vez de quedar rota.
-        .map(c => (c.categoria === "magnitud" && (!c.direccion || c.valor_referencia === null)
-                   ? { ...c, categoria: "ponderado", direccion: null,
-                       valor_referencia: null, unidad: null, moneda: null }
-                   : c));
+        // Una magnitud sin direccion, sin valor O SIN ATRIBUTO REAL no se
+        // puede puntuar contra nada: baja a ponderado en vez de quedar
+        // rota. La tercera condicion es la que mata la escala inventada —
+        // "Luminosidad, piso 8" no tiene campo, asi que no hay magnitud.
+        .map(c => {
+          if (c.categoria !== "magnitud") return c;
+          if (c.direccion && c.valor_referencia !== null && c.atributo) return c;
+          ajustes.push(`magnitud sin ${!c.atributo ? "atributo" : !c.direccion ? "direccion" : "valor"} bajada a ponderado: "${c.nombre}"`);
+          return { ...c, categoria: "ponderado", direccion: null,
+                   valor_referencia: null, unidad: null, moneda: null };
+        });
 
       if (!Array.isArray(p.innegociables)) p.innegociables = [];
       p.innegociables = p.innegociables
         .map(i => (typeof i === "string" ? { nombre: i } : i))
         .filter(i => i && i.nombre)
-        .map(i => ({
-          nombre: i.nombre,
-          razon: i.razon || null,
-          a_confirmar: i.a_confirmar === true,
-          filtrable: i.filtrable === true,
-        }));
+        .map(i => {
+          if (i.atributo && !ATRIBUTOS.includes(i.atributo)) {
+            ajustes.push(`atributo inventado anulado: "${i.atributo}" en innegociable "${i.nombre}"`);
+          }
+          return {
+            nombre: i.nombre,
+            razon: i.razon || null,
+            a_confirmar: i.a_confirmar === true,
+            atributo: ATRIBUTOS.includes(i.atributo) ? i.atributo : null,
+          };
+        });
 
       if (!Array.isArray(p.falta_preguntar)) p.falta_preguntar = [];
       if (!p.speech) {
