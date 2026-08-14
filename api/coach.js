@@ -758,7 +758,12 @@ module.exports = async function handler(req, res) {
   if (req.method !== "POST") return res.status(405).json({ error: "Method not allowed" });
 
   const context = req.body;
-  if (!context?.agente) return res.status(400).json({ error: "Falta el contexto del agente" });
+  if (!context?.agente) {
+    // Un rechazo silencioso en el log costo un ida y vuelta de diagnostico:
+    // el 400 no dejaba rastro y "no hay lineas [Rex]" parecia otra cosa.
+    console.warn(`[Rex] 400 · pedido sin context.agente · trigger "${context?.trigger || "?"}"`);
+    return res.status(400).json({ error: "Falta el contexto del agente" });
+  }
 
   // STT_HOOK: context.transcript (voz a texto) entrara aqui en el futuro.
   const canal = resolverCanal(context.channel);
