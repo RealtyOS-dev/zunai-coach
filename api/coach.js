@@ -529,30 +529,43 @@ Formato exacto:
   comparativa_resumen: {
     maxTokens: 2000,
     esfuerzo: "low",
+    // La primera tarea que escribe para OTRA audiencia. El payload que
+    // manda el frontend viene filtrado a proposito: sin presupuesto, sin
+    // contexto, sin pesos. Lo que Rex no recibe, no lo puede revelar —
+    // la restriccion es estructural, y el prompt es la segunda capa.
     tarea: `
-## TU TAREA AHORA
-Explicás el resultado de una comparativa de propiedades para que la lea EL CLIENTE COMPRADOR, no el agente.
+## TU TAREA AHORA — Y ESTA VEZ NO LE ESCRIBÍS AL AGENTE
+Escribís el resumen de una comparativa de propiedades para EL CLIENTE COMPRADOR del agente. Es un borrador: el agente lo revisa, lo edita si quiere y recién ahí lo comparte. Nunca llega solo al cliente.
+
+El tono cambia: cálido y de servicio, no directo y de trabajo. Le hablás en segunda persona, como parte del equipo que lo acompaña a elegir. Sin jerga inmobiliaria y sin tecnicismos.
 
 Producís dos cosas:
-- Un resumen de 3 a 4 frases: qué se comparó y qué se desprende. Hablale al cliente en segunda persona.
-- Una recomendación de una o dos frases, con el porqué.
+- resumen: 3 a 5 frases. Qué se comparó, qué se destaca de cada propiedad EN LO QUE EL CLIENTE PIDIÓ, y qué conviene mirar de cerca. Hablá de las propiedades, no del método. Los números ya están en las tarjetas: no los recites.
+- nota_para_agente: null casi siempre. Si viste algo que el agente tiene que resolver ANTES de compartir esto —un innegociable sin confirmar en la opción que mejor viene, un dato flojo, una tensión— decíselo acá, en una o dos frases de trabajo, con tu tono de siempre. Esta nota NO la ve el cliente.
 
-Nunca menciones puntajes, pesos ni porcentajes: el cliente no ve la ingeniería interna. Hablá de la propiedad, no del método.
-Si alguna falla un innegociable, decilo con claridad y sin rodeos.`,
+## LAS TRES RESTRICCIONES, SIN EXCEPCIÓN
+1. NADA de ingeniería interna: ni pesos, ni puntajes, ni "score", ni cómo se calcula nada.
+2. NADA del contexto privado del deal: ni presupuesto, ni urgencia, ni situación personal. Este texto puede terminar reenviado o leído por más gente que el cliente — cualquier cosa escrita sobre su situación lo debilita al negociar.
+3. NO contradigas al agente. Sos su cara ante su cliente: si algo te hace ruido, va en nota_para_agente, jamás en el resumen.
+
+Si una opción falla un innegociable confirmado, decilo claro y sin dramatismo: mejor saberlo ahora que en la visita.`,
     formato: `
 Formato exacto:
-{"resumen":"3 a 4 frases","recomendacion":"1 o 2 frases","speech":"lo mismo para escuchar"}`,
+{"resumen":"3 a 5 frases para el cliente","nota_para_agente":null,"speech":"el resumen dicho en voz alta"}`,
     normalizar: (p) => {
       if (!p.resumen && p.speech) p.resumen = p.speech;
       if (!p.resumen) p.resumen = "Todavía no hay suficientes opciones cargadas para comparar.";
-      if (!p.recomendacion) p.recomendacion = "";
-      if (!p.speech) p.speech = `${p.resumen} ${p.recomendacion}`;
+      p.nota_para_agente =
+        typeof p.nota_para_agente === "string" && p.nota_para_agente.trim()
+          ? p.nota_para_agente.trim()
+          : null;
+      if (!p.speech) p.speech = p.resumen;
       return p;
     },
     fallback: () => ({
       speech: "No pude armar el resumen en este momento.",
       resumen: "No pude armar el resumen en este momento. La comparación de estrellas está completa igual.",
-      recomendacion: "",
+      nota_para_agente: null,
     }),
   },
 
