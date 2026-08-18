@@ -526,6 +526,69 @@ Formato exacto:
     }),
   },
 
+  debrief_visita: {
+    maxTokens: 2500,
+    esfuerzo: "low",
+    // El debrief de compra: no solo ordena el relato — coachea la
+    // conversacion. Capa NUEVA a proposito: feedback_visita tiene un
+    // consumidor vivo (el flujo de venta) y las dos hacen cosas
+    // distintas: una ordena un registro, esta coachea una escucha.
+    tarea: `
+## TU TAREA AHORA
+El agente acaba de salir de una visita con su cliente comprador y te cuenta cómo fue, en texto libre. Hacés dos cosas: ORDENAR lo que dijo, y COACHEAR la conversación que tuvo — la escucha es la habilidad central de esta profesión.
+
+El debrief tiene tres preguntas: qué le gustó al cliente · qué no le gustó · ¿sigue en carrera o se descarta? Tu salida se arma alrededor de ellas.
+
+Producís:
+- reaccion: "gusto", "no_gusto" o "descarta" SOLO si el cliente lo dijo o es inequívoco de sus palabras. Si no está dicho, null — NO ADIVINES. Una reacción inventada envenena la comparativa y la recalibración.
+- comentario: qué dijo el cliente, 2 o 3 frases, CON SUS PALABRAS. Sin interpretación tuya.
+- pros y contras: lo que el cliente valoró o le hizo ruido, cada uno corto y en las palabras del cliente. Son de ESTE cliente sobre ESTA propiedad — "la plaza a dos cuadras" es un pro si él lo valoró, no porque a vos te parezca.
+- repertorio_sugerido: aparte de lo del cliente, lo OBJETIVO del inmueble que el agente mencionó y le sirve con cualquier cliente: escalera empinada, edificio en buen estado, cocina mal ventilada. No mezcles: lo subjetivo del cliente va en pros/contras, lo objetivo del inmueble va acá.
+- falta_indagar: de las tres preguntas del debrief, las que quedaron SIN respuesta en el relato — cada una formulada como pregunta lista para hacerle al cliente AHORA, antes de que se vaya. La de "¿sigue en carrera o la descartamos?" casi nadie la hace explícita, y es la que evita seguir mostrando propiedades a quien ya descartó media lista. Si el relato responde las tres, la lista va vacía.
+- speech: una o dos frases de coach. Si falta indagar algo, empujá eso; si el debrief vino completo, reconocelo — una escucha bien hecha también se celebra.
+
+No conviertas tus deducciones en palabras del cliente. Si el agente interpretó en vez de escuchar ("me pareció que le gustó"), eso es señal para falta_indagar, no un dato.`,
+    formato: `
+Formato exacto:
+{"reaccion":null,"comentario":"lo que dijo el cliente, con sus palabras","pros":["La luz del living"],"contras":["Placard chico"],"repertorio_sugerido":[{"tipo":"contra","texto":"Escalera empinada"}],"falta_indagar":["¿Sigue en carrera o la descartamos?"],"speech":"una o dos frases de coach"}`,
+    normalizar: (p) => {
+      const R = ["gusto", "no_gusto", "descarta"];
+      if (!R.includes(p.reaccion)) p.reaccion = null;
+      if (!p.comentario) p.comentario = "";
+      const textos = (a) => (Array.isArray(a) ? a : [])
+        .filter(t => typeof t === "string" && t.trim())
+        .map(t => t.trim());
+      p.pros = textos(p.pros);
+      p.contras = textos(p.contras);
+      p.repertorio_sugerido = (Array.isArray(p.repertorio_sugerido) ? p.repertorio_sugerido : [])
+        .filter(r => r && ["pro", "contra"].includes(r.tipo)
+                       && typeof r.texto === "string" && r.texto.trim())
+        .map(r => ({ tipo: r.tipo, texto: r.texto.trim() }));
+      p.falta_indagar = textos(p.falta_indagar);
+      // Coherencia: si la reaccion no esta, la pregunta de sigue/descarta
+      // tiene que estar pedida. La red la agrega si Rex la olvido.
+      if (p.reaccion === null
+          && !p.falta_indagar.some(q => /sigue|descarta/i.test(q))) {
+        p.falta_indagar.push("¿Sigue en carrera o la descartamos?");
+      }
+      if (!p.speech) {
+        p.speech = p.falta_indagar.length
+          ? `Antes de que se vaya: ${p.falta_indagar[0]}`
+          : "Debrief completo. Buena escucha.";
+      }
+      return p;
+    },
+    fallback: () => ({
+      speech: "No pude conectarme. Guardá el relato tal cual — las tres preguntas del debrief son: qué gustó, qué no, y si sigue o se descarta.",
+      reaccion: null,
+      comentario: "",
+      pros: [],
+      contras: [],
+      repertorio_sugerido: [],
+      falta_indagar: [],
+    }),
+  },
+
   comparativa_resumen: {
     maxTokens: 2000,
     esfuerzo: "low",
@@ -619,6 +682,7 @@ function buildSystemPrompt(capa, canal, parametros) {
 const MODELO_POR_TRIGGER = {
   criterios_ponderar:  "sonnet",
   feedback_visita:     "sonnet",
+  debrief_visita:      "sonnet",
   comparativa_resumen: "sonnet",
   rex_sugiere:         "sonnet",
 };
