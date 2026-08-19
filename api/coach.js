@@ -153,7 +153,15 @@ Producís tres cosas:
 - Entre 1 y 4 acciones concretas, una sola frase cada una, ordenadas por prioridad, indicando a qué deal corresponden cuando aplique.
 - Un cierre de una frase.
 
-Si la cartera está vacía, aconsejá cómo construirla.`,
+Si la cartera está vacía, aconsejá cómo construirla.
+
+## LAS SEÑALES DE LA PÁGINA DEL CLIENTE (payload.senales)
+Tres tipos, y cuando aparecen van ARRIBA del orden general:
+1. ajustes_pedido — el cliente corrigió su pedido CON PALABRAS y los criterios no se tocaron desde entonces. Máxima prioridad: el agente está buscando con la brújula vieja. La acción es concreta: responder ese ajuste hoy.
+2. decisiones_sin_respuesta — el cliente decidió en su página y pasaron horas sin respuesta. Un "quiere visitar" de 48 horas sin visita agendada es un cliente enfriándose solo.
+3. visitas_sin_cerrar — visitas que ya pasaron sin registrar cómo salieron.
+
+MODERACIÓN: de las señales de la página nombrá A LO SUMO UNA por día — la más importante. HABLÁS DEL CLIENTE AL AGENTE, NUNCA POR EL CLIENTE: "Jorge te avisó que...", "Jorge pidió visitar y...". Jamás en tono de reporte de seguimiento: el dato existe para actuar, no para vigilar — si suena a vigilancia, está mal dicho.`,
     formato: `
 Formato exacto:
 {"diagnostico":"el diagnóstico","acciones":[{"texto":"la acción","deal_id":"id del deal o null","prioridad":1}],"cierre":"el cierre","speech":"lo mismo dicho en voz alta, máximo 6 frases"}`,
@@ -244,7 +252,10 @@ Producís dos cosas:
 - Un resumen de 3 a 5 frases corridas, no una lista: quién es el cliente, qué busca o qué tiene, cómo viene la relación según el historial de interacciones, y en qué estado está hoy.
 - El próximo paso que corresponde: una frase.
 
-No repitas datos que el agente ya ve en pantalla (precio, dirección, etapa). Aportá lectura, no inventario.`,
+No repitas datos que el agente ya ve en pantalla (precio, dirección, etapa). Aportá lectura, no inventario.
+
+## LA ACTIVIDAD DE LA PÁGINA DEL CLIENTE (payload.pagina)
+Si viene, es CONTEXTO, no alerta: cuántas veces abrió su página, qué opciones miró, qué decidió, y el estado del embudo. Buscá la lectura que los números solos no dicen: "abrió cuatro veces pero no eligió ninguna para visitar — hay interés y hay freno". Del cliente al agente, nunca por el cliente.`,
     formato: `
 Formato exacto:
 {"resumen":"el párrafo","proximo_paso":"la frase","speech":"lo mismo para escuchar"}`,
@@ -641,14 +652,20 @@ Recibís los criterios ponderados de una búsqueda y las reacciones reales del c
 
 La gente dice una cosa y elige por otra: es lo más común del negocio. Si descartó las mejores de la zona que dijo priorizar y se entusiasmó con una de otro barrio, el peso de "zona" está mal y hay algo más que pesa de verdad.
 
-Solo señalá una contradicción si los datos la sostienen. Con menos de tres propiedades con reacción, devolvé hay_contradiccion en false: no alcanza para leer un patrón.
+Dos disparadores, y cambian la vara:
 
-Si la hay, producís: una observación de dos frases dirigida al AGENTE, y los ajustes de peso concretos que proponés.`,
+- REACCIONES (payload sin ajuste_cliente): solo señalá una contradicción si los datos la sostienen. Con menos de tres propiedades con reacción, devolvé hay_contradiccion en false: no alcanza para leer un patrón.
+
+- AJUSTE EXPLÍCITO (payload.ajuste_cliente presente): el cliente corrigió su pedido CON PALABRAS. No esperás tres reacciones — lo dijo él. hay_contradiccion es true por definición, y la observación CITA sus palabras: "Jorge te avisó que la luminosidad pesa más — está en 6, ¿la subimos?". El campo origen dice cuál disparador fue.
+
+En los dos casos producís: una observación de dos frases dirigida al AGENTE —del cliente al agente, nunca por el cliente—, y los ajustes de peso concretos que proponés. Informás y proponés: la decisión y el guardado quedan del agente, nunca apliques nada.`,
     formato: `
 Formato exacto:
-{"hay_contradiccion":true,"observacion":"dos frases","ajustes":[{"criterio":"Zona","peso_actual":9,"peso_sugerido":5,"razon":"por que"}],"speech":"lo mismo dicho en voz alta"}`,
+{"hay_contradiccion":true,"origen":"reacciones","observacion":"dos frases","ajustes":[{"criterio":"Zona","peso_actual":9,"peso_sugerido":5,"razon":"por que"}],"speech":"lo mismo dicho en voz alta"}`,
     normalizar: (p) => {
       p.hay_contradiccion = p.hay_contradiccion === true;
+      p.origen = ["reacciones", "ajuste_cliente"].includes(p.origen)
+        ? p.origen : "reacciones";
       if (!Array.isArray(p.ajustes)) p.ajustes = [];
       if (!p.observacion) p.observacion = "";
       if (!p.hay_contradiccion) { p.ajustes = []; p.observacion = ""; }
