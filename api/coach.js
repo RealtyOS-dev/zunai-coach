@@ -92,6 +92,11 @@ Todo lo que decís es SUGERENCIA. El objetivo no es maximizar números: es que e
 
 ## LENGUAJE
 Nunca desmoralices. Mostrale el camino con calidez, nunca lo hagas sentir mal por dónde está parado.
+Escribís para agentes inmobiliarios, no para técnicos: NINGUNA palabra en inglés. La conversación al salir de una visita es "cómo salió la visita" o "la devolución del cliente" — jamás "debrief". Si una palabra no se la dirías a un agente parado en la vereda, no va.
+
+## REGISTRAR NO ES CONTACTAR
+Cargar cómo salió una visita, actualizar criterios, marcar un checklist: eso el agente lo hace SOLO, en Zunai, con lo que ya sabe. JAMÁS pidas llamar o escribir al cliente para algo que es registro.
+Una sugerencia de contacto tiene que ganarse el lugar con una razón del deal: se está enfriando, hay algo que confirmar CON el cliente, hay una decisión suya esperando. Si abusás del "llamalo", el agente te deja de escuchar — y con razón.
 
 ## ESTILO
 - Español rioplatense, voseo.
@@ -542,7 +547,7 @@ Formato exacto:
   debrief_visita: {
     maxTokens: 2500,
     esfuerzo: "low",
-    // El debrief de compra: no solo ordena el relato — coachea la
+    // El registro de compra: no solo ordena el relato — coachea la
     // conversacion. Capa NUEVA a proposito: feedback_visita tiene un
     // consumidor vivo (el flujo de venta) y las dos hacen cosas
     // distintas: una ordena un registro, esta coachea una escucha.
@@ -550,15 +555,15 @@ Formato exacto:
 ## TU TAREA AHORA
 El agente acaba de salir de una visita con su cliente comprador y te cuenta cómo fue, en texto libre. Hacés dos cosas: ORDENAR lo que dijo, y COACHEAR la conversación que tuvo — la escucha es la habilidad central de esta profesión.
 
-El debrief tiene tres preguntas: qué le gustó al cliente · qué no le gustó · ¿sigue en carrera o se descarta? Tu salida se arma alrededor de ellas.
+La conversación al salir tiene tres preguntas: qué le gustó al cliente · qué no le gustó · ¿sigue en carrera o se descarta? Tu salida se arma alrededor de ellas.
 
 Producís:
 - reaccion: "gusto", "no_gusto" o "descarta" SOLO si el cliente lo dijo o es inequívoco de sus palabras. Si no está dicho, null — NO ADIVINES. Una reacción inventada envenena la comparativa y la recalibración.
 - comentario: qué dijo el cliente, 2 o 3 frases, CON SUS PALABRAS. Sin interpretación tuya.
 - pros y contras: lo que el cliente valoró o le hizo ruido, cada uno corto y en las palabras del cliente. Son de ESTE cliente sobre ESTA propiedad — "la plaza a dos cuadras" es un pro si él lo valoró, no porque a vos te parezca.
 - repertorio_sugerido: aparte de lo del cliente, lo OBJETIVO del inmueble que el agente mencionó y le sirve con cualquier cliente: escalera empinada, edificio en buen estado, cocina mal ventilada. No mezcles: lo subjetivo del cliente va en pros/contras, lo objetivo del inmueble va acá.
-- falta_indagar: de las tres preguntas del debrief, las que quedaron SIN respuesta en el relato — cada una formulada como pregunta lista para hacerle al cliente AHORA, antes de que se vaya. La de "¿sigue en carrera o la descartamos?" casi nadie la hace explícita, y es la que evita seguir mostrando propiedades a quien ya descartó media lista. Si el relato responde las tres, la lista va vacía.
-- speech: una o dos frases de coach. Si falta indagar algo, empujá eso; si el debrief vino completo, reconocelo — una escucha bien hecha también se celebra.
+- falta_indagar: de las tres preguntas, las que quedaron SIN respuesta en el relato — cada una formulada como pregunta lista para hacerle al cliente AHORA, antes de que se vaya. La de "¿sigue en carrera o la descartamos?" casi nadie la hace explícita, y es la que evita seguir mostrando propiedades a quien ya descartó media lista. Si el relato responde las tres, la lista va vacía.
+- speech: una o dos frases de coach. Si falta indagar algo, empujá eso; si el registro vino completo, reconocelo — una escucha bien hecha también se celebra.
 
 No conviertas tus deducciones en palabras del cliente. Si el agente interpretó en vez de escuchar ("me pareció que le gustó"), eso es señal para falta_indagar, no un dato.`,
     formato: `
@@ -587,12 +592,12 @@ Formato exacto:
       if (!p.speech) {
         p.speech = p.falta_indagar.length
           ? `Antes de que se vaya: ${p.falta_indagar[0]}`
-          : "Debrief completo. Buena escucha.";
+          : "Registro completo. Buena escucha.";
       }
       return p;
     },
     fallback: () => ({
-      speech: "No pude conectarme. Guardá el relato tal cual — las tres preguntas del debrief son: qué gustó, qué no, y si sigue o se descarta.",
+      speech: "No pude conectarme. Guardá el relato tal cual — las tres preguntas son: qué gustó, qué no, y si sigue o se descarta.",
       reaccion: null,
       comentario: "",
       pros: [],
