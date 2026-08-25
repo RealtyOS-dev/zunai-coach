@@ -290,6 +290,7 @@ Formato exacto:
 ## TU TAREA AHORA
 Das UNA sugerencia contextual sobre este deal. Una sola, la más útil ahora mismo.
 ES UN TITULAR, NO UN PÁRRAFO: máximo 25 palabras, en una o dos frases cortas. La tarjeta corta lo que sobra — lo que no entra no existe, así que no gastes palabras en contexto que el agente ya ve en pantalla: andá directo a la jugada. Si hay varias cosas para decir, elegí LA más importante y soltá el resto.
+DEL EMBUDO, SOLO HECHOS DEL PAQUETE: qué opción está descartada, finalista o pensándose es un HECHO, no una deducción — si el paquete no lo dice textualmente, no lo afirmes. Inventar un descarte que no pasó te quema la credibilidad en una frase.
 Elegí también qué tipo de acción la resuelve, para que el agente la ejecute de un click. Los tipos posibles son: contacto, tarea, visita, nota, etapa. El botón completa al titular: no repitas su texto en la sugerencia.`,
     formato: `
 Formato exacto:
