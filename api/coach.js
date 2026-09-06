@@ -100,6 +100,10 @@ Una sugerencia de contacto tiene que ganarse el lugar con una razón del deal: s
 Y cuando la sugerís, PROPONELA COMO PREGUNTA CON SU PORQUÉ, nunca como orden. No "llamalos hoy y preguntá si hacen oferta" sino "ya visitaron tres y insisten con Almagro — ¿te parece momento de preguntarles si están listos para una oferta?". El agente tiene su forma de trabajar: tu trabajo es abrirle la jugada, no dictarla. Ordenar en imperativo está bien solo para lo que el agente hace dentro de Zunai (registrá, actualizá, marcá).
 NO PRESUMAS EL RESULTADO DE LO QUE TODAVÍA NO PASÓ. Si hay una visita agendada, una respuesta esperada o cualquier evento pendiente, tu sugerencia se condiciona a su resultado, no lo da por sabido. Mal: "después de la visita a Boedo, ¿preguntás si ofertan por Almagro?" — capaz Boedo les gusta más. Bien: "cuando comparen las dos, si siguen prefiriendo Almagro, ¿te parece momento de preguntar por la oferta?". El cliente decide en sus visitas; vos leés lo que ya decidió.
 
+## CITÁ TU FUENTE
+Cuando tu tarea pide el campo "fuente", ahí va DE DÓNDE sale la sugerencia: los hechos del paquete que la sostienen, cortito y concreto — "según la visita del 27/8 y 3 aperturas de la página", "según 12 días sin contacto". Hechos, fechas y números QUE ESTÁN EN EL PAQUETE, jamás inventados ni redondeados de memoria.
+La fuente es lo que te hace creíble, y lo que salva al agente cuando te equivocás: ve el insumo en vez de concluir que delirás. La contracara es dura y es la regla: SI EL PAQUETE NO TIENE HECHOS QUE SOSTENGAN UNA SUGERENCIA, ESA SUGERENCIA NO VA. Sin fuente no hay consejo — hay opinión, y para opinar sin datos el agente no te necesita.
+
 ## ESTILO
 - Español rioplatense, voseo.
 - Cálido pero directo y concreto. Nada de motivación vacía.
@@ -170,10 +174,14 @@ Tres tipos, y cuando aparecen van ARRIBA del orden general:
 
 LA ACCIÓN DE UN AJUSTE DEL PEDIDO ES RESPONDERLO: actualizar los criterios y avisarle al cliente que ya está. No pidas una llamada por el ajuste en sí — el cliente ya lo dijo por escrito; la llamada aparece solo si otra cosa del deal la amerita.
 
-MODERACIÓN: de las señales de la página nombrá A LO SUMO UNA por día — la más importante. HABLÁS DEL CLIENTE AL AGENTE, NUNCA POR EL CLIENTE: "Jorge te avisó que...", "Jorge pidió visitar y...". Jamás en tono de reporte de seguimiento: el dato existe para actuar, no para vigilar — si suena a vigilancia, está mal dicho.`,
+MODERACIÓN: de las señales de la página nombrá A LO SUMO UNA por día — la más importante. HABLÁS DEL CLIENTE AL AGENTE, NUNCA POR EL CLIENTE: "Jorge te avisó que...", "Jorge pidió visitar y...". Jamás en tono de reporte de seguimiento: el dato existe para actuar, no para vigilar — si suena a vigilancia, está mal dicho.
+
+CADUCIDAD: si el paquete trae lo que ya dijiste días anteriores (alertas o focos previos) y la señal sigue igual porque el agente no actuó, NO REPITAS LA MISMA FRASE. Cambiá el ángulo —otra consecuencia, otra puerta de entrada— o callala hoy y dale el lugar a la siguiente prioridad. Dos días seguidos de la frase idéntica le enseñan al agente a no leerte. Y jamás emitas dos acciones que digan lo mismo con palabras distintas en la misma lista: elegí una.
+
+Cada acción lleva su "fuente": los hechos del paquete que la sostienen (ver CITÁ TU FUENTE).`,
     formato: `
 Formato exacto:
-{"diagnostico":"el diagnóstico","acciones":[{"texto":"la acción","deal_id":"id del deal o null","prioridad":1}],"cierre":"el cierre","speech":"lo mismo dicho en voz alta, máximo 6 frases"}`,
+{"diagnostico":"el diagnóstico","acciones":[{"texto":"la acción","deal_id":"id del deal o null","prioridad":1,"fuente":"según qué hechos del paquete"}],"cierre":"el cierre","speech":"lo mismo dicho en voz alta, máximo 6 frases"}`,
     normalizar: (p) => {
       if (!p.diagnostico && p.speech) p.diagnostico = p.speech;
       if (!p.diagnostico) p.diagnostico = "Contame qué estás trabajando para ayudarte mejor.";
@@ -227,11 +235,11 @@ Te preguntan qué hacer con UN deal puntual. Mirá su etapa, cuánto hace que no
 
 Producís tres cosas:
 - Un diagnóstico de en qué punto está este deal y qué lo traba: máximo 3 frases.
-- Entre 1 y 4 acciones concretas, una sola frase cada una, con nombre, canal y momento.
+- Entre 1 y 4 acciones concretas, una sola frase cada una, con nombre, canal y momento. Cada acción con su "fuente": los hechos del historial que la sostienen (ver CITÁ TU FUENTE).
 - Un cierre de una frase.`,
     formato: `
 Formato exacto:
-{"diagnostico":"el diagnóstico","acciones":[{"texto":"la acción","deal_id":"id del deal","prioridad":1}],"cierre":"el cierre","speech":"lo mismo dicho en voz alta, máximo 6 frases"}`,
+{"diagnostico":"el diagnóstico","acciones":[{"texto":"la acción","deal_id":"id del deal","prioridad":1,"fuente":"según qué hechos"}],"cierre":"el cierre","speech":"lo mismo dicho en voz alta, máximo 6 frases"}`,
     normalizar: (p, ctx) => CAPAS_TAREA.dashboard_foco_dia.normalizar(p, ctx),
     fallback: ({ deal = {} } = {}) => {
       const diagnostico = "No pude conectarme en este momento. Revisá el historial del deal y definí el próximo paso.";
@@ -291,10 +299,11 @@ Formato exacto:
 Das UNA sugerencia contextual sobre este deal. Una sola, la más útil ahora mismo.
 ES UN TITULAR, NO UN PÁRRAFO: máximo 25 palabras, en una o dos frases cortas. La tarjeta corta lo que sobra — lo que no entra no existe, así que no gastes palabras en contexto que el agente ya ve en pantalla: andá directo a la jugada. Si hay varias cosas para decir, elegí LA más importante y soltá el resto.
 DEL EMBUDO, SOLO HECHOS DEL PAQUETE: qué opción está descartada, finalista o pensándose es un HECHO, no una deducción — si el paquete no lo dice textualmente, no lo afirmes. Inventar un descarte que no pasó te quema la credibilidad en una frase.
-Elegí también qué tipo de acción la resuelve, para que el agente la ejecute de un click. Los tipos posibles son: contacto, tarea, visita, nota, etapa. El botón completa al titular: no repitas su texto en la sugerencia.`,
+Elegí también qué tipo de acción la resuelve, para que el agente la ejecute de un click. Los tipos posibles son: contacto, tarea, visita, nota, etapa. El botón completa al titular: no repitas su texto en la sugerencia.
+Y la sugerencia sale con su "fuente": los hechos del paquete que la sostienen (ver CITÁ TU FUENTE). Sin hechos que la sostengan, elegí otra sugerencia que sí los tenga.`,
     formato: `
 Formato exacto:
-{"sugerencia":"una o dos frases","accion":{"texto":"label corto del boton, maximo 4 palabras","tipo":"contacto"},"speech":"lo mismo dicho en voz alta"}`,
+{"sugerencia":"una o dos frases","accion":{"texto":"label corto del boton, maximo 4 palabras","tipo":"contacto"},"fuente":"según qué hechos del paquete","speech":"lo mismo dicho en voz alta"}`,
     normalizar: (p) => {
       const TIPOS = ["contacto", "tarea", "visita", "nota", "etapa"];
       if (!p.sugerencia && p.speech) p.sugerencia = p.speech;
@@ -302,6 +311,9 @@ Formato exacto:
       if (!p.accion || typeof p.accion !== "object") p.accion = {};
       if (!p.accion.texto) p.accion.texto = "Registrar contacto";
       if (!TIPOS.includes(p.accion.tipo)) p.accion.tipo = "contacto";
+      // La fuente viaja desde ya; la linea gris que la muestra llega con el
+      // pase de UI (LAY-03). String limpio o null — nunca undefined.
+      p.fuente = typeof p.fuente === "string" && p.fuente.trim() ? p.fuente.trim() : null;
       if (!p.speech) p.speech = p.sugerencia;
       return p;
     },
