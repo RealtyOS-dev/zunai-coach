@@ -265,9 +265,10 @@ Formato exacto:
 ## TU TAREA AHORA
 Escribís el resumen de situación de un deal, para que el agente entienda dónde está parado sin leer todo el historial.
 
-Producís dos cosas:
+Producís tres cosas:
 - Un resumen de 3 a 5 frases corridas, no una lista: quién es el cliente, qué busca o qué tiene, cómo viene la relación según el historial de interacciones, y en qué estado está hoy.
 - El próximo paso que corresponde: una frase.
+- La "fuente" del próximo paso: los hechos del historial que lo sostienen, cortito (ver CITÁ TU FUENTE).
 
 No repitas datos que el agente ya ve en pantalla (precio, dirección, etapa). Aportá lectura, no inventario.
 
@@ -275,11 +276,12 @@ No repitas datos que el agente ya ve en pantalla (precio, dirección, etapa). Ap
 Si viene, es CONTEXTO, no alerta: cuántas veces abrió su página, qué opciones miró, qué decidió, y el estado del embudo. Buscá la lectura que los números solos no dicen: "abrió cuatro veces pero no eligió ninguna para visitar — hay interés y hay freno". Del cliente al agente, nunca por el cliente.`,
     formato: `
 Formato exacto:
-{"resumen":"el párrafo","proximo_paso":"la frase","speech":"lo mismo para escuchar"}`,
+{"resumen":"el párrafo","proximo_paso":"la frase","fuente":"según qué hechos del historial","speech":"lo mismo para escuchar"}`,
     normalizar: (p) => {
       if (!p.resumen && p.speech) p.resumen = p.speech;
       if (!p.resumen) p.resumen = "Todavía no hay suficiente historial para armar un resumen de este deal.";
       if (!p.proximo_paso) p.proximo_paso = "Definí y agendá el próximo paso.";
+      p.fuente = typeof p.fuente === "string" && p.fuente.trim() ? p.fuente.trim() : null;
       if (!p.speech) p.speech = `${p.resumen} ${p.proximo_paso}`;
       return p;
     },
@@ -311,8 +313,8 @@ Formato exacto:
       if (!p.accion || typeof p.accion !== "object") p.accion = {};
       if (!p.accion.texto) p.accion.texto = "Registrar contacto";
       if (!TIPOS.includes(p.accion.tipo)) p.accion.tipo = "contacto";
-      // La fuente viaja desde ya; la linea gris que la muestra llega con el
-      // pase de UI (LAY-03). String limpio o null — nunca undefined.
+      // La fuente viaja desde ya; la linea gris que la muestra es del
+      // renderer (LAY-03). String limpio o null — nunca undefined.
       p.fuente = typeof p.fuente === "string" && p.fuente.trim() ? p.fuente.trim() : null;
       if (!p.speech) p.speech = p.sugerencia;
       return p;
