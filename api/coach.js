@@ -42,18 +42,14 @@ const RATIOS_PISO = {
   ticket_se_mide_por:            "valor_propiedad",
 };
 
-const TICKET_SEGUN = {
-  valor_propiedad: "por VALOR de propiedad, no por comision",
-  comision:        "por la COMISION, no por el valor de la propiedad",
-};
+// PREFIJO CACHEADO (v2 item 68c — prompt caching obligatorio): rexBase es
+// TEXTO ESTATICO. Los parametros del negocio y la zona horaria viajan en el
+// MENSAJE DE USUARIO (el payload), jamas aca — un numero interpolado en el
+// system rompe el cache para todos los agentes. Si el cliente no manda
+// parametros, el handler inyecta RATIOS_PISO en el payload (no en el prompt)
+// y lo declara en _meta.ratios.
 
-const pct = (n) => Math.round(Number(n) * 100);
-
-function rexBase(parametros) {
-  const r = { ...RATIOS_PISO, ...(parametros || {}) };
-  const enCrecimiento = Number(r.cartera_en_desarrollo_hasta) + 1;
-  const ticket = TICKET_SEGUN[r.ticket_se_mide_por] || TICKET_SEGUN.valor_propiedad;
-
+function rexBase() {
   return `Sos Rex, el coach de negocio de Zunai, la plataforma de gestión y coaching para agentes inmobiliarios en LatAm.
 
 No sos un asistente genérico ni un bot de tareas. Sos un coach, mentor y planificador con criterio real de negocio inmobiliario. Tu magia es ser PROACTIVO e integrado al trabajo del agente: aparecés en el momento justo, con lo pertinente, sin interrumpir de más.
@@ -62,17 +58,16 @@ No sos un asistente genérico ni un bot de tareas. Sos un coach, mentor y planif
 
 Ingeniería inversa de metas: de la meta grande a las acciones concretas de hoy, con números. Meta de ingresos, operaciones necesarias, pre-listings, conexiones y contactos por semana, acciones del día.
 
-Ratios de referencia del negocio:
-- Cada ${r.prelistings_por_cierre} pre-listings o pre-buyings dan 1 cierre.
-- Cerca del ${pct(r.tasa_captacion_prelisting)}% de los pre-listings se captan. Con seguimiento se recupera cerca del ${pct(r.recupero_no_captados)}% de los no captados.
-- Semana sustentable: ${r.semana_conexiones_cara_a_cara} conexiones cara a cara, ${r.semana_contactos_nuevos} contactos nuevos a la red, ${r.semana_prelistings} pre-listings.
-- Cartera: menos de ${r.cartera_en_desarrollo_hasta} es negocio en desarrollo, entre ${enCrecimiento} y ${r.cartera_en_crecimiento_hasta} en crecimiento, ${r.cartera_prospera_desde} o más próspero. Pasadas unas ${r.cartera_sugerir_equipo} propiedades, conviene sugerir armar equipo.
-- Rotación de cartera (vendidas sobre cartera) igual o mayor al ${pct(r.rotacion_cartera_min)}%. Tasa de servicio igual o mayor al ${pct(r.tasa_servicio_min)}%.
+LOS RATIOS DEL NEGOCIO VIENEN EN EL PAQUETE (payload.parametros), leídos de la configuración del mercado y del agente — este texto no trae números a propósito: la configuración manda. Los campos y cómo leerlos:
+- prelistings_por_cierre: cada N pre-listings o pre-buyings dan 1 cierre.
+- tasa_captacion_prelisting y recupero_no_captados: fracciones (0.40 = 40%) — cuánto se capta, y cuánto se recupera de los no captados con seguimiento.
+- semana_conexiones_cara_a_cara, semana_contactos_nuevos, semana_prelistings: la semana sustentable.
+- cartera_en_desarrollo_hasta / cartera_en_crecimiento_hasta / cartera_prospera_desde / cartera_sugerir_equipo: los umbrales de cartera (debajo del primero es negocio en desarrollo; pasado el último conviene sugerir equipo).
+- rotacion_cartera_min y tasa_servicio_min: fracciones, los pisos sanos.
+- ticket_se_mide_por: "valor_propiedad" = el ticket se habla por VALOR de propiedad, no por comisión; "comision" = al revés.
 - Conexión cara a cara es cualquier contacto presencial donde se hable del rubro.
 
-Estos números son los de referencia del mercado del agente, no leyes: si su propia experiencia dice otra cosa, la suya manda.
-
-Ticket promedio: se habla del ticket ${ticket}.
+Estos números son la referencia del mercado del agente, no leyes: si su propia experiencia dice otra cosa, la suya manda. Cuando una meta llega con su campo "origen" ("referencia" · "tuyo" · "aprendido"), citalo cuando el número pese en tu argumento — y la referencia se nombra "referencia de Zunai, estimación del método", JAMÁS "promedio de la industria".
 
 ## LAS 3 CLAVES QUE SOSTENÉS SIEMPRE
 1. RESILIENCIA: cada no acerca al sí.
@@ -833,25 +828,43 @@ function resolverCapa(trigger) {
   return { nombre: TRIGGER_DEFAULT, capa: CAPAS_TAREA[TRIGGER_DEFAULT] };
 }
 
-function buildSystemPrompt(capa, canal, parametros) {
+function buildSystemPrompt(capa, canal) {
   const reglaCanal = REGLAS_SALIDA[canal];
-  let prompt = rexBase(parametros) + reglaCanal.regla + "\n" + capa.tarea;
+  let prompt = rexBase() + reglaCanal.regla + "\n" + capa.tarea;
   if (reglaCanal.usa_formato) prompt += "\n" + capa.formato;
   return prompt;
 }
 
 // ─── MODEL DISCOVERY ────────────────────────────────────────────
 
-const MODELO_POR_TRIGGER = {
-  criterios_ponderar:  "sonnet",
-  feedback_visita:     "sonnet",
-  debrief_visita:      "sonnet",
-  comparativa_resumen: "sonnet",
-  rex_sugiere:         "sonnet",
-  ritual_cierre_dia:   "sonnet",
-  // ritual_semana sin familia a proposito: planificar la semana es la
-  // tarea de mas criterio del coach — va al mejor modelo disponible.
-};
+// El modelo de cada capa es CONFIGURACION, no codigo (v2 item del 16/9):
+// cambiar un modelo = editar la env REX_MODELO_POR_TRIGGER en Vercel
+// (JSON: {"trigger":"familia"}), sin tocar este archivo. Lo de abajo es
+// el default. Familia vacia o ausente = el mejor modelo disponible —
+// ritual_semana queda ahi a proposito: planificar la semana es la tarea
+// de mas criterio del coach.
+function modelosPorTrigger() {
+  const defaults = {
+    criterios_ponderar:  "sonnet",
+    feedback_visita:     "sonnet",
+    debrief_visita:      "sonnet",
+    comparativa_resumen: "sonnet",
+    rex_sugiere:         "sonnet",
+    ritual_cierre_dia:   "sonnet",
+  };
+  const crudo = process.env.REX_MODELO_POR_TRIGGER;
+  if (!crudo) return defaults;
+  try {
+    const extra = JSON.parse(crudo);
+    console.log(`[Rex] Modelos desde configuracion: ${crudo}`);
+    return { ...defaults, ...extra };
+  } catch (err) {
+    // Config rota = se ve en el log y rigen los defaults; jamas silencio.
+    console.error(`[Rex] REX_MODELO_POR_TRIGGER invalida (${err.message}), rigen los defaults`);
+    return defaults;
+  }
+}
+const MODELO_POR_TRIGGER = modelosPorTrigger();
 
 const MODEL_CACHE = {};
 const MODEL_CACHE_TTL = 24 * 60 * 60 * 1000;
@@ -910,7 +923,10 @@ const anthropicProvider = {
     const msg = await client.messages.create({
       model,
       max_tokens: maxTokens,
-      system: systemPrompt,
+      // Prefijo cacheado (68c): el system es estable por trigger — lo
+      // variable (parametros, zona horaria, el deal) viaja en el mensaje
+      // de usuario. cache_control marca el prefijo para el cache.
+      system: [{ type: "text", text: systemPrompt, cache_control: { type: "ephemeral" } }],
       messages: [{ role: "user", content: userMessage }],
       output_config: { effort: esfuerzo || "medium" },
     });
@@ -1001,12 +1017,12 @@ module.exports = async function handler(req, res) {
   const familia = MODELO_POR_TRIGGER[triggerNombre] || null;
 
   // Los ratios llegan del cliente, que los lee de `parametros`. Si no
-  // vienen, Rex razona con el piso de este archivo — y eso queda dicho en
-  // _meta, no escondido.
-  const parametros = context.parametros || null;
-  const origenRatios = parametros ? "parametros" : "piso";
-  if (!parametros) {
-    console.warn(`[Rex] ${triggerNombre} · sin parametros en el payload, usando el piso del archivo`);
+  // vienen, el piso del archivo se INYECTA EN EL PAYLOAD (jamas en el
+  // system: el prefijo es estatico y cacheado) — y queda dicho en _meta.
+  const origenRatios = context.parametros ? "parametros" : "piso";
+  if (!context.parametros) {
+    console.warn(`[Rex] ${triggerNombre} · sin parametros en el payload, inyectando el piso del archivo`);
+    context.parametros = { ...RATIOS_PISO };
   }
 
   const responder = (payload, extra = {}) =>
@@ -1016,7 +1032,7 @@ module.exports = async function handler(req, res) {
     const inicio = Date.now();
     const result = await Promise.race([
       callProviders({
-        systemPrompt: buildSystemPrompt(capa, canal, parametros),
+        systemPrompt: buildSystemPrompt(capa, canal),
         userMessage: JSON.stringify(context),
         maxTokens: capa.maxTokens,
         esfuerzo: capa.esfuerzo,
