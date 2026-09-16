@@ -178,6 +178,8 @@ MODERACIÓN: de las señales de la página nombrá A LO SUMO UNA por día — la
 
 CADUCIDAD: si el paquete trae lo que ya dijiste días anteriores (alertas o focos previos) y la señal sigue igual porque el agente no actuó, NO REPITAS LA MISMA FRASE. Cambiá el ángulo —otra consecuencia, otra puerta de entrada— o callala hoy y dale el lugar a la siguiente prioridad. Dos días seguidos de la frase idéntica le enseñan al agente a no leerte. Y jamás emitas dos acciones que digan lo mismo con palabras distintas en la misma lista: elegí una.
 
+SI EL PAQUETE TRAE cierre_ayer_pendiente EN TRUE: el cierre del día de ayer no se hizo. El foco de hoy arranca recuperándolo — el primer lugar de la lista es cerrar lo de ayer (los compromisos que quedaron sin registrar), antes que cualquier otra prioridad. Una frase, sin culpa: recuperar no es retar.
+
 Cada acción lleva su "fuente": los hechos del paquete que la sostienen (ver CITÁ TU FUENTE).`,
     formato: `
 Formato exacto:
@@ -704,6 +706,125 @@ Formato exacto:
       ajustes: [],
     }),
   },
+
+  ritual_semana: {
+    maxTokens: 6000,
+    esfuerzo: "medium",
+    // El ritual de planificacion semanal (Agenda v1). CONTRATO CON EL FRONT:
+    // Rex NO escribe — el front persiste la propuesta como bloques
+    // "propuestos" (punteados, autor rex, estados de AGE-); la aprobacion
+    // del agente los vuelve confirmados y lo no aprobado se descarta al
+    // cerrar el ritual o vencer la semana. payload.zona_horaria viene de
+    // parametros del agente (cacheada por el front), no del navegador.
+    // payload.persona es campo reservado: null hasta que exista la memoria
+    // humana de Rex.
+    tarea: `
+## TU TAREA AHORA — EL RITUAL DE LA SEMANA
+Cerrás la semana con el agente y armás la siguiente, juntos. Dos movimientos: el BALANCE de lo que pasó, y la PROPUESTA de la semana que viene. El plan es del agente: vos proponés, él suma, saca y mueve.
+
+## EL BALANCE (payload.balance y payload.metas)
+Dos o tres frases. Celebrá lo CONTROLABLE (las acciones que hizo: conexiones, visitas, bloques cumplidos) y leé el resultado sin culpa — se planifica sobre lo controlable, se celebra lo demás. Cada meta trae su origen ("referencia", "tuyo" o "aprendido"): cuando un número pese en tu argumento, decí de cuál viene — no es lo mismo el piso del mercado que el ratio que él mismo demostró.
+
+## LA PROPUESTA (payload.plantilla + payload.compromisos)
+Bloques concretos para la semana entrante: día, desde, hasta, tipo y una nota corta si hace falta. Las reglas, en orden:
+1. La plantilla de semana ideal es la base. Si viene null es la PRIMERA VEZ: proponé un patrón a partir de la semana real que acaba de cerrar, y decilo — la plantilla se arma juntos hoy.
+2. Los compromisos ya agendados son intocables: planificás alrededor.
+3. Los rangos "ocupado" son vida personal: planificá alrededor SIN nombrarlos ni preguntar qué son. Existen, alcanza.
+4. NUNCA planifiques al 100%: entre el 60 y el 70% agendado, el resto es aire — este rubro es interruptivo.
+5. La prospección se protege primero: es lo único 100% en control del agente.
+6. De 1 a 3 prioridades para la semana. Diez prioridades es ninguna.
+Las horas y los días, en la zona horaria del paquete (payload.zona_horaria).
+Si payload.persona viene con patrones que el agente declaró, respetalos al ubicar los bloques; si viene null, no existe.
+
+## LA PARTICIPACIÓN
+Cerrás preguntando de verdad: qué cambiaría, qué le pesa, si está de acuerdo. Rex propone, no pisa.`,
+    formato: `
+Formato exacto:
+{"balance":"2 o 3 frases","propuesta":[{"fecha":"2026-09-21","desde":"09:00","hasta":"11:00","tipo_bloque":"prospeccion","nota":"opcional o null"}],"prioridades":["hasta tres"],"pregunta":"la pregunta de participación","fuente":"según qué hechos del paquete","speech":"la versión hablada, máximo 8 frases"}`,
+    normalizar: (p) => {
+      if (!p.balance) p.balance = "";
+      p.propuesta = (Array.isArray(p.propuesta) ? p.propuesta : [])
+        .filter(b => b && typeof b.fecha === "string" && typeof b.desde === "string"
+                       && typeof b.hasta === "string" && typeof b.tipo_bloque === "string")
+        .map(b => ({ fecha: b.fecha, desde: b.desde, hasta: b.hasta,
+                     tipo_bloque: b.tipo_bloque,
+                     nota: typeof b.nota === "string" && b.nota.trim() ? b.nota.trim() : null }));
+      p.prioridades = (Array.isArray(p.prioridades) ? p.prioridades : [])
+        .filter(t => typeof t === "string" && t.trim()).slice(0, 3);
+      if (!p.pregunta) p.pregunta = "¿Estás de acuerdo? ¿Algo que cambiar?";
+      p.fuente = typeof p.fuente === "string" && p.fuente.trim() ? p.fuente.trim() : null;
+      if (!p.speech) p.speech = `${p.balance} ${p.pregunta}`;
+      return p;
+    },
+    fallback: () => ({
+      speech: "No pude conectarme para armar la semana. Tu semana pasada quedó registrada; podés armar la nueva desde tu plantilla y la repasamos después.",
+      balance: "No pude conectarme para el balance.",
+      propuesta: [],
+      prioridades: [],
+      pregunta: "¿La armamos a mano y la repasamos después?",
+      fuente: null,
+    }),
+  },
+
+  ritual_cierre_dia: {
+    maxTokens: 3000,
+    esfuerzo: "low",
+    // El cierre del dia (Agenda v1). Es la franja donde SI se carga data
+    // (LAY-04). Si el agente no lo hace, dashboard_foco_dia recibe
+    // cierre_ayer_pendiente y lo recupera a la manana siguiente.
+    tarea: `
+## TU TAREA AHORA — EL CIERRE DEL DÍA
+Repasás el día con el agente en dos minutos: qué quedó abierto, qué se hizo, y cómo pinta mañana. Vacío no es culpa: el lenguaje es constructivo siempre.
+
+Producís:
+- repaso: 1 o 2 frases del día — lo hecho reconocido, lo abierto nombrado sin drama.
+- pendientes: UNA pregunta corta por cada compromiso de payload.vencido_hoy, usando SU evento_id — jamás inventes ids ni pendientes que el paquete no trae. La pantalla los cierra de a un toque.
+  Además, A LO SUMO UNA pregunta de tracker (tipo "tracker", evento_id null) si payload.tracker muestra un hueco de carga de hoy — una sola, la que más importe. Si el tracker está al día, ninguna.
+- manana: un titular de cómo pinta el día siguiente (payload.manana) y hasta 3 prioridades. Los rangos "ocupado" existen pero no se nombran.
+- Horas y días en la zona del paquete (payload.zona_horaria).`,
+    formato: `
+Formato exacto:
+{"repaso":"1 o 2 frases","pendientes":[{"evento_id":"uuid del paquete o null","tipo":"compromiso","pregunta":"corta"}],"manana":{"titular":"una frase","prioridades":["hasta tres"]},"fuente":"según qué hechos","speech":"la versión hablada, máximo 6 frases"}`,
+    normalizar: (p, ctx) => {
+      const validos = new Set(((ctx || {}).vencido_hoy || []).map(v => v && v.evento_id).filter(Boolean));
+      const ajustes = [];
+      p.repaso = typeof p.repaso === "string" ? p.repaso : "";
+      let trackers = 0;
+      p.pendientes = (Array.isArray(p.pendientes) ? p.pendientes : [])
+        .filter(x => x && typeof x.pregunta === "string" && x.pregunta.trim())
+        .map(x => ({ evento_id: x.evento_id || null,
+                     tipo: x.tipo === "tracker" ? "tracker" : "compromiso",
+                     pregunta: x.pregunta.trim() }))
+        .filter(x => {
+          if (x.tipo === "tracker") { trackers += 1; return trackers <= 1; }
+          if (x.evento_id && !validos.has(x.evento_id)) {
+            ajustes.push(`pendiente con evento_id inventado descartado`);
+            return false;
+          }
+          return true;
+        });
+      if (!p.manana || typeof p.manana !== "object") p.manana = {};
+      p.manana = {
+        titular: typeof p.manana.titular === "string" ? p.manana.titular : "",
+        prioridades: (Array.isArray(p.manana.prioridades) ? p.manana.prioridades : [])
+          .filter(t => typeof t === "string" && t.trim()).slice(0, 3),
+      };
+      p.fuente = typeof p.fuente === "string" && p.fuente.trim() ? p.fuente.trim() : null;
+      if (!p.speech) p.speech = `${p.repaso} ${p.manana.titular}`.trim();
+      if (ajustes.length) {
+        console.warn(`[Rex] ritual_cierre_dia ajustado: ${ajustes.join(" · ")}`);
+        p._ajustes = ajustes;
+      }
+      return p;
+    },
+    fallback: (ctx) => {
+      const n = ((ctx || {}).vencido_hoy || []).length;
+      const repaso = n
+        ? `No pude conectarme, pero tenés ${n} compromiso${n === 1 ? "" : "s"} de hoy sin cerrar — cerralos a mano y mañana arrancamos limpios.`
+        : "No pude conectarme. Si no quedó nada abierto, el día está cerrado igual.";
+      return { speech: repaso, repaso, pendientes: [], manana: { titular: "", prioridades: [] }, fuente: null };
+    },
+  },
 };
 
 function resolverCapa(trigger) {
@@ -727,6 +848,9 @@ const MODELO_POR_TRIGGER = {
   debrief_visita:      "sonnet",
   comparativa_resumen: "sonnet",
   rex_sugiere:         "sonnet",
+  ritual_cierre_dia:   "sonnet",
+  // ritual_semana sin familia a proposito: planificar la semana es la
+  // tarea de mas criterio del coach — va al mejor modelo disponible.
 };
 
 const MODEL_CACHE = {};
