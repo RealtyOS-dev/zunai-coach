@@ -393,13 +393,17 @@ Y EL ATRIBUTO NO CAMBIA EL PESO. Que un criterio no tenga campo no lo hace menos
 Lo que el agente no mencionó y cambia la búsqueda. Si algo YA está en el texto, no lo pidas: quedás como que no leíste.
 Antes de poner cada ítem, buscalo en el texto. "Forma de pago" con el texto diciendo "175 mil en efectivo" es exactamente el error: efectivo ES la forma de pago. Si querés precisar algo que ya está dicho a medias, preguntá lo que falta —"si son 175 mil en efectivo, ¿hay algo de crédito además?"— no lo que ya te dijeron.
 
+## CÓMO LO PIDIÓ — LA VOZ DEL CLIENTE (para la frase del pedido)
+Cada criterio y cada innegociable sale ADEMÁS con "como_lo_pidieron": la frase corta EN EL IDIOMA DEL CLIENTE que lo dice como él lo dijo — "un 2 ambientes o más", "bien luminoso", "con un lugar para el escritorio de Ana", "nada de planta baja". Sin jerga del modelo, sin categorías: es la pieza con la que Zunai ensambla la frase visible del pedido (las listas se dicen con "o"; el innegociable, corto y rotundo). El agente la puede editar después: proponé la mejor.
+Y cuando marques a_confirmar, la razón se FORMULA COMO PREGUNTA lista para hacerse: "¿Planta baja es descarte total? — dijo que no necesita vender, pero mencionó escaleras". El agente la copia y la manda; no la traduce.
+
 ## REGLAS FINALES
 Cada cosa va en UNA sola lista. Un innegociable no lleva peso ni aparece entre los criterios.
 Distinguí lo que el cliente DIJO de lo que vos INFERÍS. Lo inferido se marca con inferido en true.
 Las razones son de una frase. Entre 3 y 8 criterios.`,
     formato: `
 Formato exacto:
-{"contexto":"texto corrido sobre quien es el cliente","presupuesto":{"importe":175000,"moneda":"USD","peso":8},"criterios":[{"nombre":"Zona","categoria":"lista","peso":6,"valores":["Almagro","Boedo"],"direccion":null,"valor_referencia":null,"unidad":null,"moneda":null,"atributo":"nivel_3","inferido":false,"razon":"una frase"}],"innegociables":[{"nombre":"Acepta mascotas","razon":"una frase","a_confirmar":false,"atributo":"amenities"}],"falta_preguntar":["forma de pago"],"speech":"resumen hablado, maximo 5 frases"}`,
+{"contexto":"texto corrido sobre quien es el cliente","presupuesto":{"importe":175000,"moneda":"USD","peso":8},"criterios":[{"nombre":"Zona","categoria":"lista","peso":6,"valores":["Almagro","Boedo"],"direccion":null,"valor_referencia":null,"unidad":null,"moneda":null,"atributo":"nivel_3","inferido":false,"razon":"una frase","como_lo_pidieron":"en Almagro o Boedo"}],"innegociables":[{"nombre":"Acepta mascotas","razon":"una frase","a_confirmar":false,"atributo":"amenities","como_lo_pidieron":"que acepten mascotas sí o sí"}],"falta_preguntar":["forma de pago"],"speech":"resumen hablado, maximo 5 frases"}`,
     normalizar: (p) => {
       const CATS = ["ponderado", "lista", "magnitud"];
       const DIRS = ["piso", "techo", "objetivo"];
@@ -476,6 +480,8 @@ Formato exacto:
             atributo: ATRIBUTOS.includes(c.atributo) ? c.atributo : null,
             inferido: c.inferido !== false,
             razon: c.razon || null,
+            como_lo_pidieron: typeof c.como_lo_pidieron === "string" && c.como_lo_pidieron.trim()
+              ? c.como_lo_pidieron.trim() : null,
           };
         })
         // Una magnitud sin direccion, sin valor O SIN ATRIBUTO REAL no se
@@ -503,6 +509,8 @@ Formato exacto:
             razon: i.razon || null,
             a_confirmar: i.a_confirmar === true,
             atributo: ATRIBUTOS.includes(i.atributo) ? i.atributo : null,
+            como_lo_pidieron: typeof i.como_lo_pidieron === "string" && i.como_lo_pidieron.trim()
+              ? i.como_lo_pidieron.trim() : null,
           };
         });
 
